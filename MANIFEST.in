@@ -1,0 +1,5 @@
+include README.rst LICENSE tox.ini .coveragerc setup.cfg
+graft docs
+graft src
+include versioneer.py
+include src/txacme/_version.py

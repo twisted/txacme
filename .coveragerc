@@ -1,0 +1,10 @@
+[run]
+branch = True
+source = txacme
+omit = src/txacme/_version.py
+
+[paths]
+source =
+    src/txacme
+    .tox/*/lib/python*/site-packages/txacme
+    .tox/*/site-packages/txacme
