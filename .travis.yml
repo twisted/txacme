@@ -29,6 +29,8 @@ matrix:
       apt:
         packages:
         - libenchant-dev
+  - python: 3.5
+    env: TOXENV=flake8
 install:
   # Upgrade packaging tools separately, so that other installations are
   # performed with the upgraded tools.

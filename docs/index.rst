@@ -14,12 +14,13 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   API documentation </api/modules>
 
 
 Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
+* :ref:`py-modindex`
 * :ref:`search`
 

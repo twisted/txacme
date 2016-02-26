@@ -1,7 +1,10 @@
-build/
-.coverage
-dist/
-docs/_build
 *.egg-info/
 *.pyc
+.coverage
+.hypothesis/
+.testrepository/
 .tox/
+build/
+dist/
+docs/_build
+docs/api/
