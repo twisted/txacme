@@ -172,7 +172,7 @@ else:
 #html_additional_pages = {}
 
 # If false, no module index is generated.
-#html_domain_indices = True
+html_domain_indices = True
 
 # If false, no index is generated.
 #html_use_index = True
@@ -297,4 +297,9 @@ texinfo_documents = [
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/',
+               (None, 'python-objects.inv')),
+    'acme': ('http://acme-python.readthedocs.org/en/latest/',
+             (None, 'acme-objects.inv')),
+    }
