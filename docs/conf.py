@@ -300,6 +300,6 @@ texinfo_documents = [
 intersphinx_mapping = {
     'python': ('https://docs.python.org/',
                (None, 'python-objects.inv')),
-    'acme': ('http://acme-python.readthedocs.org/en/latest/',
+    'acme': ('https://acme-python.readthedocs.org/en/latest/',
              (None, 'acme-objects.inv')),
     }

@@ -42,8 +42,17 @@ setup(
         'Programming Language :: Python :: Implementation :: PyPy',
         'Topic :: Software Development :: Libraries :: Python Modules',
         ],
-    install_requires=['Twisted[tls]>=14.0.2', 'treq'],
+    install_requires=[
+        'Twisted[tls]>=14.0.2',
+        'acme>=0.4.0',
+        'treq>=15.1.0',
+        ],
     extras_require={
-        'dev': ['hypothesis>=3.0.0,<4.0.0', 'testtools', 'testrepository'],
+        'test': [
+            'fixtures>=1.4.0',
+            'hypothesis>=3.0.0,<4.0.0',
+            'testrepository>=0.0.20',
+            'testtools>=2.0.0',
+            ],
         },
     )

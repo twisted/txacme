@@ -4,6 +4,7 @@
 .hypothesis/
 .testrepository/
 .tox/
+_trial_temp/
 build/
 dist/
 docs/_build
