@@ -51,6 +51,7 @@ setup(
         'test': [
             'fixtures>=1.4.0',
             'hypothesis>=3.0.0,<4.0.0',
+            'mock',
             'testrepository>=0.0.20',
             'testtools>=2.0.0',
             ],
