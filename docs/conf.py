@@ -109,7 +109,7 @@ pygments_style = 'sphinx'
 #keep_warnings = False
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = False
+todo_include_todos = True
 
 
 # -- Options for HTML output ----------------------------------------------
@@ -298,8 +298,10 @@ texinfo_documents = [
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/',
+    'python': ('https://docs.python.org/3/',
                (None, 'python-objects.inv')),
     'acme': ('https://acme-python.readthedocs.org/en/latest/',
              (None, 'acme-objects.inv')),
+    'twisted': ('https://twisted.readthedocs.org/en/latest/',
+                (None, 'twisted-objects.inv')),
     }

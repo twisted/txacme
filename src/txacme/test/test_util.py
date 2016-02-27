@@ -15,7 +15,7 @@ class GeneratePrivateKeyTests(TestCase):
     @given(s.text().filter(lambda t: t not in ['rsa']))
     def test_unknown_key_type(self, key_type):
         """
-        Passing an unknown key type results in :exc:`ValueError`.
+        Passing an unknown key type results in :exc:`.ValueError`.
         """
         with ExpectedException(ValueError):
             generate_private_key(key_type)
@@ -31,3 +31,5 @@ class GeneratePrivateKeyTests(TestCase):
         self.assertThat(
             key1.public_key().public_numbers(),
             Not(Equals(key2.public_key().public_numbers())))
+
+__all__ = ['GeneratePrivateKeyTests']
