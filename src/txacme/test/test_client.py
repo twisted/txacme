@@ -305,3 +305,5 @@ class ClientTests(TestCase):
                     terms_of_service=Equals(
                         URL.fromText(u'https://example.org/acme/terms')),
                 )))
+
+__all__ = ['ClientTests']

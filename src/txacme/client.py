@@ -15,7 +15,19 @@ from twisted.web.http_headers import Headers
 logger = Logger()
 
 
+# Borrowed from requests, with modifications.
+
 def _parse_header_links(value):
+    """
+    Parse the links from a Link: header field.
+
+    ..  todo: Links with the same relation collide at the moment.
+
+    :param bytes value: The header value.
+
+    :rtype: dict
+    :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
+    """
     links = {}
     replace_chars = b' \'"'
     for val in re.split(b', *<', value):
@@ -53,10 +65,10 @@ class Client(object):
 
     def register(self, new_reg=None):
         """
-        Register.
+        Create a new registration with the ACME server.
 
         :param ~acme.messages.NewRegistration new_reg: The registration message
-            to use, or :const:`None` to construct one (the default).
+            to use, or ``None`` to construct one (the default).
 
         :return: The registration resource.
         :rtype: ~acme.messages.RegistrationResource
@@ -71,6 +83,9 @@ class Client(object):
 
     def _parse_regr_response(self, response, uri=None, new_authzr_uri=None,
                              terms_of_service=None):
+        """
+        Parse a registration response from the server.
+        """
         link = response.headers.getRawHeaders(b'link', [''])[0]
         links = _parse_header_links(link)
         if 'terms-of-service' in links:
@@ -98,6 +113,10 @@ class Client(object):
             )
 
     def _check_regr(self, regr, new_reg):
+        """
+        Check that a registration response contains the registration we were
+        expecting.
+        """
         if (regr.body.key != self._key.public_key() or
                 regr.body.contact != new_reg.contact):
             raise errors.UnexpectedUpdate(regr)
@@ -122,7 +141,8 @@ class JWSClient(object):
         self._nonces = set()
 
     def _wrap_in_jws(self, obj, nonce):
-        """Wrap `JSONDeSerializable` object in JWS.
+        """
+        Wrap `JSONDeSerializable` object in JWS.
 
         ..  todo:: Implement ``acmePath``.
 
@@ -144,20 +164,22 @@ class JWSClient(object):
     def _check_response(cls, response, content_type=None):
         """
         Check response content and its type.
-        .. note::
-           Checking is not strict: wrong server response ``Content-Type``
-           HTTP header is ignored if response is an expected JSON object
-           (c.f. Boulder #56).
-        :param bytes content_type: Expected Content-Type response header.
-            If JSON is expected and not present in server response, this
-            function will raise an error. Otherwise, wrong Content-Type
-            is ignored, but logged.
-        :raises acme.messages.Error: If server response body
-            carries HTTP Problem (draft-ietf-appsawg-http-problem-00).
-        :raises acme.errors.ClientError: In case of other networking errors.
+
+        ..  note::
+
+            Unlike :mod:`acme.client`, checking is strict.
+
+        :param bytes content_type: Expected Content-Type response header.  If
+            JSON is expected and not present in server response, this function
+            will raise an error.  Otherwise, wrong Content-Type is ignored, but
+            logged.
+
+        :raises ~acme.messages.Error: If server response body carries HTTP
+            Problem (draft-ietf-appsawg-http-problem-00).
+        :raises ~acme.errors.ClientError: In case of other networking errors.
         """
         logger.debug('Received response {response} '
-                     '(headers: {response.headers}): {response.content!r}',
+                     '(headers: {response.headers})',
                      response=response)
 
         response_ct = response.headers.getRawHeaders(
@@ -197,9 +219,9 @@ class JWSClient(object):
         Send HTTP request.
 
         :param unicode method: The HTTP method to use.
-        :param twisted.python.url.URL url: The URL to make the request to.
+        :param ~twisted.python.url.URL url: The URL to make the request to.
 
-        :returns: Deferred firing with the HTTP Response
+        :return: Deferred firing with the HTTP response.
         """
         logger.debug('Sending {method} request to {url}. '
                      'args: {args!r}, kwargs: {kwargs!r}',
@@ -228,6 +250,13 @@ class JWSClient(object):
             .addCallback(self._check_request, content_type=content_type))
 
     def _add_nonce(self, response):
+        """
+        Store a nonce from a response we received.
+
+        :param ~twisted.web.iweb.IResponse response: The HTTP response.
+
+        :return: The response, unmodified.
+        """
         nonce = response.headers.getRawHeaders(
             REPLAY_NONCE_HEADER, [None])[0]
         if nonce is not None:
@@ -243,6 +272,9 @@ class JWSClient(object):
             raise errors.MissingNonce(response)
 
     def _get_nonce(self, url):
+        """
+        Get a nonce to use in a request, removing it from the nonces on hand.
+        """
         if len(self._nonces) > 0:
             return succeed(self._nonces.pop())
         else:
@@ -265,3 +297,5 @@ class JWSClient(object):
                 lambda response:
                 self._check_response(response, content_type=content_type))
             )
+
+__all__ = ['Client']
