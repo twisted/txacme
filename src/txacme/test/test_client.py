@@ -2,7 +2,7 @@ import json
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
-from acme import jose, jws, messages, errors
+from acme import errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
@@ -17,6 +17,7 @@ from treq.testing import (
     _SynchronousProducer, HasHeaders, RequestTraversalAgent,
     StringStubbingResource)
 from twisted.internet import reactor
+from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.web import http
 
@@ -133,9 +134,16 @@ def _nonce_response(url, nonce):
             Equals(HasHeaders({b'user-agent': [b'txacme']})),
             Equals(b'')]),
         (http.NOT_ALLOWED,
-         {b'content-type': [b'application/json'],
-          b'replay-nonce': [jose.b64encode(nonce)]},
+         {b'content-type': b'application/json',
+          b'replay-nonce': jose.b64encode(nonce)},
          b'{}'))
+
+
+def _json_dumps(j):
+    s = json.dumps(j)
+    if _PY3:
+        s = s.encode('utf-8')
+    return s
 
 
 class RequestSequence(treq_RequestSequence):
@@ -166,7 +174,11 @@ class RequestSequence(treq_RequestSequence):
 
 
 def on_json(matcher):
-    return AfterPreprocessing(json.loads, matcher)
+    def _loads(s):
+        if isinstance(s, bytes):
+            s = s.decode('utf-8')
+        return json.loads(s)
+    return AfterPreprocessing(_loads, matcher)
 
 
 def on_jws(matcher):
@@ -201,8 +213,8 @@ class ClientTests(TestCase):
                  Always(),
                  Always()]),
               (http.CREATED,
-               {b'content-type': [b'application/json'],
-                b'replay-nonce': [jose.b64encode(b'Nonce2')]},
+               {b'content-type': b'application/json',
+                b'replay-nonce': jose.b64encode(b'Nonce2')},
                b'{}'))],
             self.expectThat)
         client = self.useFixture(ClientFixture(sequence)).client
@@ -237,7 +249,7 @@ class ClientTests(TestCase):
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
                     b'<https://example.org/acme/terms>;rel="terms-of-service"',
                 ])},
-               json.dumps({
+               _json_dumps({
                    u'key': {
                        u'n': u'alQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
                              u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
@@ -279,7 +291,7 @@ class ClientTests(TestCase):
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
                     b'<https://example.org/acme/terms>;rel="terms-of-service"',
                 ])},
-               json.dumps({
+               _json_dumps({
                    u'key': {
                        u'n': u'rlQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
                              u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',

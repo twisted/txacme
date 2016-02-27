@@ -29,22 +29,24 @@ def _parse_header_links(value):
     :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
     """
     links = {}
-    replace_chars = b' \'"'
-    for val in re.split(b', *<', value):
+    value = value.decode('ascii')
+    replace_chars = u' \'"'
+    for val in re.split(u', *<', value):
         try:
-            url, params = val.split(";", 1)
+            url, params = val.split(u';', 1)
         except ValueError:
-            url, params = val, ''
+            url, params = val, u''
 
         link = {}
-        link['url'] = url.strip('<> \'"')
-        for param in params.split(';'):
+        link[u'url'] = url.strip(u'<> \'"')
+        for param in params.split(u';'):
             try:
-                key, value = param.split('=')
+                key, value = param.split(u'=')
             except ValueError:
                 break
             link[key.strip(replace_chars)] = value.strip(replace_chars)
-        links[link.get('rel') or link.get('url')] = link
+        link[u'url'] = URL.fromText(link[u'url'])
+        links[link.get(u'rel') or link.get(u'url').asText()] = link
     return links
 
 
@@ -86,17 +88,15 @@ class Client(object):
         """
         Parse a registration response from the server.
         """
-        link = response.headers.getRawHeaders(b'link', [''])[0]
+        link = response.headers.getRawHeaders(b'link', [b''])[0]
         links = _parse_header_links(link)
-        if 'terms-of-service' in links:
-            terms_of_service = URL.fromText(
-                links[b'terms-of-service'][b'url'].decode('ascii'))
-        if 'next' in links:
-            new_authzr_uri = URL.fromText(
-                links[b'next'][b'url'].decode('ascii'))
+        if u'terms-of-service' in links:
+            terms_of_service = links[u'terms-of-service'][u'url']
+        if u'next' in links:
+            new_authzr_uri = links[u'next'][u'url']
         if new_authzr_uri is None:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders('location', [None])[0]
+        location = response.headers.getRawHeaders(b'location', [None])[0]
         if location is None:
             location = uri
         else:
@@ -209,7 +209,7 @@ class JWSClient(object):
 
             if (content_type == JSON_CONTENT_TYPE) != (jobj is not None):
                 raise errors.ClientError(
-                    'Unexpected response Content-Type: {0}'.format(
+                    'Unexpected response Content-Type: {0!r}'.format(
                         response_ct))
 
         returnValue(response)
