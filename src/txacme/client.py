@@ -51,6 +51,17 @@ def _parse_header_links(value):
     return links
 
 
+def _default_client(jws_client, reactor, key, alg):
+    """
+    Make a client if we didn't get one.
+    """
+    if jws_client is None:
+        pool = HTTPConnectionPool(reactor)
+        agent = Agent(reactor, pool=pool)
+        jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
+    return jws_client
+
+
 class Client(object):
     """
     ACME client interface.
@@ -73,12 +84,8 @@ class Client(object):
         :return: The constructed client.
         :rtype: .Client
         """
-        if jws_client is None:
-            pool = HTTPConnectionPool(reactor)
-            agent = Agent(reactor, pool=pool)
-            jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
         return (
-            jws_client.get(url)
+            _default_client(jws_client, reactor, key, alg).get(url)
             .addCallback(json_content)
             .addCallback(messages.Directory.from_json)
             .addCallback(

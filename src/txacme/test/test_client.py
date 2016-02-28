@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from testtools import TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Equals, IsInstance, MatchesAll, MatchesListwise,
+    AfterPreprocessing, Equals, Is, IsInstance, MatchesAll, MatchesListwise,
     MatchesPredicate, MatchesStructure, Mismatch)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
@@ -19,9 +19,10 @@ from treq.testing import (
 from twisted.internet import reactor
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
+from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http
 
-from txacme.client import Client, JWSClient
+from txacme.client import _default_client, Client, JWSClient
 from txacme.util import generate_private_key
 
 
@@ -357,5 +358,16 @@ class ClientTests(TestCase):
                         lambda client:
                         client.directory[messages.NewRegistration()],
                         Equals(new_reg))))
+
+    def test_default_client(self):
+        """
+        :func:`txacme.client._default_client` constructs a client if one was
+        not provided.
+        """
+        reactor = MemoryReactor()
+        client = _default_client(None, reactor, RSA_KEY_512, jose.RS384)
+        self.assertThat(client, IsInstance(JWSClient))
+        # We should probably assert some stuff about the treq.HTTPClient, but
+        # it's hard without doing awful mock stuff.
 
 __all__ = ['ClientTests']
