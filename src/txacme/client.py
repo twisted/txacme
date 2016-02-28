@@ -234,6 +234,8 @@ class JWSClient(object):
         elif response_ct != content_type:
             raise errors.ClientError(
                 'Unexpected response Content-Type: {0!r}'.format(response_ct))
+        elif content_type == JSON_CONTENT_TYPE and jobj is None:
+            raise errors.ClientError(response)
 
         returnValue(response)
 

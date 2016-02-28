@@ -93,7 +93,7 @@ class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, directory, key=None, alg=jose.RS256):
+    def __init__(self, sequence, key=None, alg=jose.RS256):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
         self._directory = messages.Directory({
@@ -433,5 +433,15 @@ class ClientTests(TestCase):
                         u'type': u'unauthorized',
                         u'detail': u'blah blah blah'}))),
             failed_with(IsInstance(messages.Error)))
+
+    def test_check_expected_bad_json(self):
+        """
+        If a JSON response was expected, but could not be parse,
+        :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                BadResponse(json=lambda: fail(ValueError()))),
+            failed_with(IsInstance(errors.ClientError)))
 
 __all__ = ['ClientTests']
