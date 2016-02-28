@@ -44,6 +44,7 @@ setup(
         ],
     install_requires=[
         'Twisted[tls]>=15.5.0',
+        'attrs',
         'acme>=0.4.0',
         'treq>=15.1.0',
         ],

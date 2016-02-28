@@ -2,13 +2,14 @@ import json
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
+import attr
 from acme import errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from testtools import TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Equals, Is, IsInstance, MatchesAll, MatchesListwise,
+    AfterPreprocessing, Equals, IsInstance, MatchesAll, MatchesListwise,
     MatchesPredicate, MatchesStructure, Mismatch)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
@@ -17,12 +18,16 @@ from treq.testing import (
     _SynchronousProducer, HasHeaders, RequestTraversalAgent,
     StringStubbingResource)
 from twisted.internet import reactor
+from twisted.internet.defer import fail, succeed
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http
+from twisted.web.http_headers import Headers
 
-from txacme.client import _default_client, Client, JWSClient
+from txacme.client import (
+    _default_client, Client, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE,
+    JWSClient)
 from txacme.util import generate_private_key
 
 
@@ -135,7 +140,7 @@ def _nonce_response(url, nonce):
             Equals(HasHeaders({b'user-agent': [b'txacme']})),
             Equals(b'')]),
         (http.NOT_ALLOWED,
-         {b'content-type': b'application/json',
+         {b'content-type': JSON_CONTENT_TYPE,
           b'replay-nonce': jose.b64encode(nonce)},
          b'{}'))
 
@@ -194,6 +199,20 @@ def on_jws(matcher):
                     on_json(matcher)))))
 
 
+@attr.s
+class BadResponse(object):
+    """
+    Test response implementation for various bad response cases.
+    """
+    code = attr.ib(default=http.OK)
+    content_type = attr.ib(default=JSON_CONTENT_TYPE)
+    json = attr.ib(default=lambda: succeed({}))
+
+    @property
+    def headers(self):
+        return Headers({b'content-type': [self.content_type]})
+
+
 class ClientTests(TestCase):
     """
     :class:`.Client` provides a client interface for the ACME API.
@@ -214,7 +233,7 @@ class ClientTests(TestCase):
                  Always(),
                  Always()]),
               (http.CREATED,
-               {b'content-type': b'application/json',
+               {b'content-type': JSON_CONTENT_TYPE,
                 b'replay-nonce': jose.b64encode(b'Nonce2')},
                b'{}'))],
             self.expectThat)
@@ -242,7 +261,7 @@ class ClientTests(TestCase):
                  Always(),
                  Always()]),
               (http.CREATED,
-               {b'content-type': b'application/json',
+               {b'content-type': JSON_CONTENT_TYPE,
                 b'replay-nonce': jose.b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/reg/1',
                 b'link': b','.join([
@@ -284,7 +303,7 @@ class ClientTests(TestCase):
                      u'resource': u'new-reg',
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.CREATED,
-               {b'content-type': b'application/json',
+               {b'content-type': JSON_CONTENT_TYPE,
                 b'replay-nonce': jose.b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/reg/1',
                 b'link': b','.join([
@@ -321,7 +340,7 @@ class ClientTests(TestCase):
 
     def test_from_directory(self):
         """
-        :func:`txacme.client.Client.from_url` constructs a client with a
+        :func:`~txacme.client.Client.from_url` constructs a client with a
         directory retrieved from the given URL.
         """
         new_reg = u'https://example.org/acme/new-reg'
@@ -333,7 +352,7 @@ class ClientTests(TestCase):
                 Always(),
                 Always()]),
              (http.OK,
-              {b'content-type': b'application/json',
+              {b'content-type': JSON_CONTENT_TYPE,
                b'replay-nonce': jose.b64encode(b'Nonce')},
               _json_dumps({
                   u'new-reg': new_reg,
@@ -361,7 +380,7 @@ class ClientTests(TestCase):
 
     def test_default_client(self):
         """
-        :func:`txacme.client._default_client` constructs a client if one was
+        :func:`~txacme.client._default_client` constructs a client if one was
         not provided.
         """
         reactor = MemoryReactor()
@@ -369,5 +388,54 @@ class ClientTests(TestCase):
         self.assertThat(client, IsInstance(JWSClient))
         # We should probably assert some stuff about the treq.HTTPClient, but
         # it's hard without doing awful mock stuff.
+
+    def test_check_invalid_json(self):
+        """
+        If a JSON response is expected, but a response is received with a
+        non-JSON Content-Type, :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                BadResponse(content_type=b'application/octet-stream')),
+            failed_with(IsInstance(errors.ClientError)))
+
+    def test_check_invalid_error_type(self):
+        """
+        If an error response is received with a non-JSON-problem Content-Type,
+        :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                BadResponse(
+                    code=http.FORBIDDEN,
+                    content_type=b'application/octet-stream')),
+            failed_with(IsInstance(errors.ClientError)))
+
+    def test_check_invalid_error(self):
+        """
+        If an error response is received but cannot be parse,
+        :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                BadResponse(
+                    code=http.FORBIDDEN,
+                    content_type=JSON_ERROR_CONTENT_TYPE)),
+            failed_with(IsInstance(errors.ClientError)))
+
+    def test_check_valid_error(self):
+        """
+        If an error response is received but cannot be parse,
+        :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                BadResponse(
+                    code=http.FORBIDDEN,
+                    content_type=JSON_ERROR_CONTENT_TYPE,
+                    json=lambda: succeed({
+                        u'type': u'unauthorized',
+                        u'detail': u'blah blah blah'}))),
+            failed_with(IsInstance(messages.Error)))
 
 __all__ = ['ClientTests']

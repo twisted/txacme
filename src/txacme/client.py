@@ -124,10 +124,14 @@ class Client(object):
         if new_authzr_uri is None:
             raise errors.ClientError('"next" link missing')
         location = response.headers.getRawHeaders(b'location', [None])[0]
-        if location is None:
-            location = uri
-        else:
-            location = URL.fromText(location.decode('ascii'))
+
+        # FIXME: Not sure if we need this?
+        # if location is None:
+        #     location = uri
+        # else:
+        #     location = URL.fromText(location.decode('ascii'))
+
+        location = URL.fromText(location.decode('ascii'))
         return (
             response.json()
             .addCallback(
@@ -188,7 +192,7 @@ class JWSClient(object):
 
     @classmethod
     @inlineCallbacks
-    def _check_response(cls, response, content_type=None):
+    def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):
         """
         Check response content and its type.
 
@@ -197,9 +201,8 @@ class JWSClient(object):
             Unlike :mod:`acme.client`, checking is strict.
 
         :param bytes content_type: Expected Content-Type response header.  If
-            JSON is expected and not present in server response, this function
-            will raise an error.  Otherwise, wrong Content-Type is ignored, but
-            logged.
+            the response Content-Type does not match, :exc:`ClientError` is
+            raised.
 
         :raises ~acme.messages.Error: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
@@ -228,7 +231,7 @@ class JWSClient(object):
             else:
                 # response is not JSON object
                 raise errors.ClientError(response)
-        elif (content_type == JSON_CONTENT_TYPE) != (jobj is not None):
+        elif response_ct != content_type:
             raise errors.ClientError(
                 'Unexpected response Content-Type: {0!r}'.format(response_ct))
 
