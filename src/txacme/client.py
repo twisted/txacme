@@ -8,7 +8,6 @@ from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import inlineCallbacks, returnValue, succeed
 from twisted.logger import Logger
-from twisted.python.url import URL
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
 
@@ -46,8 +45,8 @@ def _parse_header_links(value):
             except ValueError:
                 break
             link[key.strip(replace_chars)] = value.strip(replace_chars)
-        link[u'url'] = URL.fromText(link[u'url'])
-        links[link.get(u'rel') or link.get(u'url').asText()] = link
+        link[u'url'] = link[u'url']
+        links[link.get(u'rel') or link.get(u'url')] = link
     return links
 
 
@@ -85,7 +84,7 @@ class Client(object):
         :rtype: .Client
         """
         return (
-            _default_client(jws_client, reactor, key, alg).get(url)
+            _default_client(jws_client, reactor, key, alg).get(url.asText())
             .addCallback(json_content)
             .addCallback(messages.Directory.from_json)
             .addCallback(
@@ -104,11 +103,48 @@ class Client(object):
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
+        return self.update_registration(
+            new_reg, uri=self.directory[new_reg])
 
-        d = self._client.post(URL.fromText(self.directory[new_reg]), new_reg)
-        d.addCallback(self._parse_regr_response)
-        d.addCallback(self._check_regr, new_reg)
-        return d
+    def agree_to_tos(self, regr):
+        """
+        Accept the terms-of-service for a registration.
+
+        :param ~acme.messages.RegistrationResource regr: The registration to
+            update.
+
+        :return: The updated registration resource.
+        :rtype: ~acme.messages.RegistrationResource.
+        """
+        return self.update_registration(
+            regr.update(
+                body=regr.body.update(
+                    agreement=regr.terms_of_service)))
+
+    def update_registration(self, regr, uri=None):
+        """
+        Submit a registration to the server to update it.
+
+        :param ~acme.messages.RegistrationResource regr: The registration to
+            update.  Can be a :class:`~acme.messages.NewRegistration` instead,
+            in order to create a new registration.
+        :param twisted.python.url.URL uri: The url to submit to.  Must be
+            specified if a :class:`~acme.messages.NewRegistration` is provided.
+
+        :return: The updated registration resource.
+        :rtype: ~acme.messages.RegistrationResource.
+        """
+        if uri is None:
+            uri = regr.uri
+        if isinstance(regr, messages.RegistrationResource):
+            message = messages.UpdateRegistration(**dict(regr.body))
+        else:
+            message = regr
+        return (
+            self._client.post(uri, message)
+            .addCallback(self._parse_regr_response)
+            .addCallback(self._check_regr, regr)
+            )
 
     def _parse_regr_response(self, response, uri=None, new_authzr_uri=None,
                              terms_of_service=None):
@@ -131,7 +167,7 @@ class Client(object):
         # else:
         #     location = URL.fromText(location.decode('ascii'))
 
-        location = URL.fromText(location.decode('ascii'))
+        location = location.decode('ascii')
         return (
             response.json()
             .addCallback(
@@ -148,7 +184,10 @@ class Client(object):
         Check that a registration response contains the registration we were
         expecting.
         """
-        if (regr.body.key != self._key.public_key() or
+        if type(regr) == type(new_reg):
+            if regr != new_reg:
+                raise errors.UnexpectedUpdate(regr)
+        elif (regr.body.key != self._key.public_key() or
                 regr.body.contact != new_reg.contact):
             raise errors.UnexpectedUpdate(regr)
         return regr
@@ -269,7 +308,7 @@ class JWSClient(object):
         headers = kwargs.setdefault('headers', Headers())
         headers.setRawHeaders(b'user-agent', [self._user_agent])
         response = self._treq.request(
-            method, url.asText(), *args, **kwargs)
+            method, url, *args, **kwargs)
         return response
 
     def head(self, url, *args, **kwargs):
@@ -350,6 +389,8 @@ class JWSClient(object):
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
         """
+        headers = kwargs.setdefault('headers', Headers())
+        headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
         return (
             self._get_nonce(url)
             .addCallback(lambda nonce: self._wrap_in_jws(obj, nonce))

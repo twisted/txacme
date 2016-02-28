@@ -9,8 +9,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Equals, IsInstance, MatchesAll, MatchesListwise,
-    MatchesPredicate, MatchesStructure, Mismatch, Not, StartsWith)
+    AfterPreprocessing, ContainsDict, Equals, IsInstance,
+    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
+    Mismatch, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
@@ -256,7 +257,7 @@ class ClientTests(TestCase):
                  Equals(b'POST'),
                  Equals(u'https://example.org/acme/new-reg'),
                  Equals({}),
-                 Always(),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
                  Always()]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -296,7 +297,7 @@ class ClientTests(TestCase):
                  Equals(b'POST'),
                  Equals(u'https://example.org/acme/new-reg'),
                  Equals({}),
-                 Always(),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
                  on_jws(Equals({
                      u'resource': u'new-reg',
                      u'contact': [u'mailto:example@example.com']}))]),
@@ -328,12 +329,69 @@ class ClientTests(TestCase):
                     body=MatchesStructure(
                         key=Equals(RSA_KEY_512.public_key()),
                         contact=Equals(reg.contact)),
-                    uri=Equals(
-                        URL.fromText(u'https://example.org/acme/reg/1')),
+                    uri=Equals(u'https://example.org/acme/reg/1'),
                     new_authzr_uri=Equals(
-                        URL.fromText(u'https://example.org/acme/new-authz')),
-                    terms_of_service=Equals(
-                        URL.fromText(u'https://example.org/acme/terms')),
+                        u'https://example.org/acme/new-authz'),
+                    terms_of_service=Equals(u'https://example.org/acme/terms'),
+                )))
+
+    def test_agree_to_tos(self):
+        """
+        Agreeing to the TOS returns a registration with the agreement updated.
+        """
+        tos = u'https://example.org/acme/terms'
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/reg/1',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/reg/1'),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(ContainsDict({
+                     u'resource': Equals(u'reg'),
+                     u'agreement': Equals(tos)}))]),
+              (http.ACCEPTED,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'location': b'https://example.org/acme/reg/1',
+                b'link': b','.join([
+                    b'<https://example.org/acme/new-authz>;rel="next"',
+                    b'<https://example.org/acme/recover-reg>;rel="recover"',
+                    b'<https://example.org/acme/terms>;rel="terms-of-service"',
+                ])},
+               _json_dumps({
+                   u'key': {
+                       u'n': u'rlQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
+                             u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
+                       u'e': u'AQAB',
+                       u'kty': u'RSA'},
+                   u'contact': [u'mailto:example@example.com'],
+                   u'agreement': tos,
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        reg = messages.RegistrationResource(
+            body=messages.Registration(
+                contact=(u'mailto:example@example.com',),
+                key=RSA_KEY_512.public_key()),
+            uri=u'https://example.org/acme/reg/1',
+            new_authzr_uri=u'https://example.org/acme/new-authz',
+            terms_of_service=tos)
+        with sequence.consume(self.fail):
+            d = client.agree_to_tos(reg)
+            self.assertThat(
+                d, succeeded(MatchesStructure(
+                    body=MatchesStructure(
+                        key=Equals(RSA_KEY_512.public_key()),
+                        contact=Equals(reg.body.contact),
+                        agreement=Equals(tos)),
+                    uri=Equals(u'https://example.org/acme/reg/1'),
+                    new_authzr_uri=Equals(
+                        u'https://example.org/acme/new-authz'),
+                    terms_of_service=Equals(tos),
                 )))
 
     def test_from_directory(self):
