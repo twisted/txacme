@@ -362,7 +362,6 @@ class ClientTests(TestCase):
               (http.ACCEPTED,
                {b'content-type': JSON_CONTENT_TYPE,
                 b'replay-nonce': jose.b64encode(b'Nonce2'),
-                b'location': b'https://example.org/acme/reg/1',
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
@@ -436,10 +435,11 @@ class ClientTests(TestCase):
             self.assertThat(
                 d,
                 succeeded(
-                    AfterPreprocessing(
-                        lambda client:
-                        client.directory[messages.NewRegistration()],
-                        Equals(new_reg))))
+                    MatchesAll(
+                        AfterPreprocessing(
+                            lambda client:
+                            client.directory[messages.NewRegistration()],
+                            Equals(new_reg)))))
 
     def test_default_client(self):
         """

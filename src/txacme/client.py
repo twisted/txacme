@@ -8,6 +8,7 @@ from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import inlineCallbacks, returnValue, succeed
 from twisted.logger import Logger
+from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
 
@@ -83,8 +84,9 @@ class Client(object):
         :return: The constructed client.
         :rtype: .Client
         """
+        jws_client = _default_client(jws_client, reactor, key, alg)
         return (
-            _default_client(jws_client, reactor, key, alg).get(url.asText())
+            jws_client.get(url.asText())
             .addCallback(json_content)
             .addCallback(messages.Directory.from_json)
             .addCallback(
@@ -103,8 +105,24 @@ class Client(object):
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
-        return self.update_registration(
-            new_reg, uri=self.directory[new_reg])
+        return (
+            self.update_registration(new_reg, uri=self.directory[new_reg])
+            .addErrback(self._maybe_registered)
+            )
+
+    def _maybe_registered(self, failure):
+        """
+        If the registration already exists, we should just load it.
+        """
+        failure.trap(ServerError)
+        response = failure.value.response
+        if response.code == http.CONFLICT:
+            location = response.headers.getRawHeaders(b'location', [None])[0]
+            if location is not None:
+                uri = location.decode('ascii')
+                return self.update_registration(
+                    messages.UpdateRegistration(), uri=uri)
+        return failure
 
     def agree_to_tos(self, regr):
         """
@@ -142,7 +160,7 @@ class Client(object):
             message = regr
         return (
             self._client.post(uri, message)
-            .addCallback(self._parse_regr_response)
+            .addCallback(self._parse_regr_response, uri=uri)
             .addCallback(self._check_regr, regr)
             )
 
@@ -160,14 +178,10 @@ class Client(object):
         if new_authzr_uri is None:
             raise errors.ClientError('"next" link missing')
         location = response.headers.getRawHeaders(b'location', [None])[0]
-
-        # FIXME: Not sure if we need this?
-        # if location is None:
-        #     location = uri
-        # else:
-        #     location = URL.fromText(location.decode('ascii'))
-
-        location = location.decode('ascii')
+        if location is None:
+            location = uri
+        else:
+            location = location.decode('ascii')
         return (
             response.json()
             .addCallback(
@@ -204,12 +218,13 @@ class ServerError(Exception):
     """
     :exc:`acme.messages.Error` isn't usable as an asynchronous exception,
     because it doesn't allow setting the ``__traceback__`` attribute like
-    Twisted wants to do when cleaning Failures.  This type exists solely to
-    wrap such an error.
+    Twisted wants to do when cleaning Failures.  This type exists to wrap such
+    an error, as well as provide access to the original response.
     """
-    def __init__(self, message):
-        Exception.__init__(self, message)
+    def __init__(self, message, response):
+        Exception.__init__(self, message, response)
         self.message = message
+        self.response = response
 
     def __repr__(self):
         return 'ServerError({!r})'.format(self.message)
@@ -280,7 +295,7 @@ class JWSClient(object):
         if 400 <= response.code < 600:
             if response_ct == JSON_ERROR_CONTENT_TYPE and jobj is not None:
                 try:
-                    raise ServerError(messages.Error.from_json(jobj))
+                    raise ServerError(messages.Error.from_json(jobj), response)
                 except jose.DeserializationError as error:
                     # Couldn't deserialize JSON object
                     raise errors.ClientError((response, error))
