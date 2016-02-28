@@ -201,16 +201,9 @@ class JWSClient(object):
             else:
                 # response is not JSON object
                 raise errors.ClientError(response)
-        else:
-            if jobj is not None and response_ct != JSON_CONTENT_TYPE:
-                logger.debug(
-                    'Ignoring wrong Content-Type ({res!r}) for JSON decodable '
-                    'response', res=response_ct)
-
-            if (content_type == JSON_CONTENT_TYPE) != (jobj is not None):
-                raise errors.ClientError(
-                    'Unexpected response Content-Type: {0!r}'.format(
-                        response_ct))
+        elif (content_type == JSON_CONTENT_TYPE) != (jobj is not None):
+            raise errors.ClientError(
+                'Unexpected response Content-Type: {0!r}'.format(response_ct))
 
         returnValue(response)
 
@@ -227,8 +220,7 @@ class JWSClient(object):
                      'args: {args!r}, kwargs: {kwargs!r}',
                      method=method, url=url, args=args, kwargs=kwargs)
         headers = kwargs.setdefault('headers', Headers())
-        if not headers.hasHeader(b'user-agent'):
-            headers.setRawHeaders(b'user-agent', [self._user_agent])
+        headers.setRawHeaders(b'user-agent', [self._user_agent])
         response = self._treq.request(
             method, url.asText(), *args, **kwargs)
         return response
