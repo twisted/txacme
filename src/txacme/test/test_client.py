@@ -409,6 +409,47 @@ class ClientTests(TestCase):
                     terms_of_service=Equals(u'https://example.org/acme/terms'),
                 )))
 
+    def test_register_error(self):
+        """
+        If some other error occurs during registration, a
+        :exc:`txacme.client.ServerError` results.
+        """
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/new-reg',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com']}))]),
+              (http.SERVICE_UNAVAILABLE,
+               {b'content-type': JSON_ERROR_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                },
+               _json_dumps(
+                   {u'status': http.SERVICE_UNAVAILABLE,
+                    u'type': u'urn:acme:error:rateLimited',
+                    u'detail': u'The request exceeds a rate limit'}
+               )))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        with sequence.consume(self.fail):
+            d = client.register(reg)
+            self.assertThat(
+                d, failed_with(MatchesAll(
+                    IsInstance(ServerError),
+                    MatchesStructure(
+                        message=MatchesStructure(
+                            typ=Equals(u'urn:acme:error:rateLimited'),
+                            detail=Equals(u'The request exceeds a rate limit'),
+                            )))))
+
     def test_agree_to_tos(self):
         """
         Agreeing to the TOS returns a registration with the agreement updated.

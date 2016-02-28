@@ -117,11 +117,10 @@ class Client(object):
         failure.trap(ServerError)
         response = failure.value.response
         if response.code == http.CONFLICT:
-            location = response.headers.getRawHeaders(b'location', [None])[0]
-            if location is not None:
-                uri = location.decode('ascii')
-                return self.update_registration(
-                    messages.UpdateRegistration(), uri=uri)
+            location = response.headers.getRawHeaders(b'location')[0]
+            uri = location.decode('ascii')
+            return self.update_registration(
+                messages.UpdateRegistration(), uri=uri)
         return failure
 
     def agree_to_tos(self, regr):
@@ -421,5 +420,5 @@ class JWSClient(object):
             )
 
 __all__ = [
-    'Client', 'JWSClient', 'JSON_CONTENT_TYPE', 'JSON_ERROR_CONTENT_TYPE',
-    'REPLAY_NONCE_HEADER']
+    'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
+    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER']
