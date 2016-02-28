@@ -109,7 +109,7 @@ pygments_style = 'sphinx'
 #keep_warnings = False
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = False
+todo_include_todos = True
 
 
 # -- Options for HTML output ----------------------------------------------
@@ -172,7 +172,7 @@ else:
 #html_additional_pages = {}
 
 # If false, no module index is generated.
-#html_domain_indices = True
+html_domain_indices = True
 
 # If false, no index is generated.
 #html_use_index = True
@@ -297,4 +297,11 @@ texinfo_documents = [
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3/',
+               (None, 'python-objects.inv')),
+    'acme': ('https://acme-python.readthedocs.org/en/latest/',
+             (None, 'acme-objects.inv')),
+    'twisted': ('https://twisted.readthedocs.org/en/latest/',
+                (None, 'twisted-objects.inv')),
+    }
