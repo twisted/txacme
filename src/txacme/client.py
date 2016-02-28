@@ -162,9 +162,9 @@ REPLAY_NONCE_HEADER = b'Replay-Nonce'
 class ServerError(Exception):
     """
     :exc:`acme.messages.Error` isn't usable as an asynchronous exception,
-    because it doesn't allow setting the `__traceback__` attribute like Twisted
-    wants to do when cleaning Failures.  This type exists solely to wrap such
-    an error.
+    because it doesn't allow setting the ``__traceback__`` attribute like
+    Twisted wants to do when cleaning Failures.  This type exists solely to
+    wrap such an error.
     """
     def __init__(self, message):
         Exception.__init__(self, message)
