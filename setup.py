@@ -43,7 +43,7 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
         ],
     install_requires=[
-        'Twisted[tls]>=15.2.0',
+        'Twisted[tls]>=15.5.0',
         'acme>=0.4.0',
         'treq>=15.1.0',
         ],
