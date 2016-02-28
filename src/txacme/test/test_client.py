@@ -444,4 +444,63 @@ class ClientTests(TestCase):
                 BadResponse(json=lambda: fail(ValueError()))),
             failed_with(IsInstance(errors.ClientError)))
 
-__all__ = ['ClientTests']
+
+class ExtraCoverageTests(TestCase):
+    """
+    Tests to get coverage on some test helpers that we don't really want to
+    maintain ourselves.
+    """
+    def test_always_never(self):
+        self.assertThat(Always(), AfterPreprocessing(str, Equals('Always()')))
+        self.assertThat(Never(), AfterPreprocessing(str, Equals('Never()')))
+
+    def test_unexpected_number_of_request_causes_failure(self):
+        """
+        If there are no more expected requests, making a request causes a
+        failure.
+        """
+        async_failures = []
+        sequence = RequestSequence(
+            [],
+            async_failure_reporter=lambda *a: async_failures.append(a))
+        client = HTTPClient(
+            agent=RequestTraversalAgent(
+                StringStubbingResource(sequence)),
+            data_to_body_producer=_SynchronousProducer)
+        d = client.get('https://anything', data=b'what', headers={b'1': b'1'})
+        self.assertThat(
+            d,
+            succeeded(MatchesStructure(code=Equals(500))))
+        self.assertEqual(1, len(async_failures))
+        self.assertIn("No more requests expected, but request",
+                      async_failures[0][2])
+
+        # the expected requests have all been made
+        self.assertTrue(sequence.consumed())
+
+    def test_consume_context_manager_fails_on_remaining_requests(self):
+        """
+        If the `consume` context manager is used, if there are any remaining
+        expecting requests, the test case will be failed.
+        """
+        sequence = RequestSequence(
+            [(Always(), (418, {}, b'body'))] * 2,
+            async_failure_reporter=self.assertThat)
+        client = HTTPClient(
+            agent=RequestTraversalAgent(
+                StringStubbingResource(sequence)),
+            data_to_body_producer=_SynchronousProducer)
+
+        consume_failures = []
+        with sequence.consume(sync_failure_reporter=consume_failures.append):
+            self.assertThat(
+                client.get('https://anything', data=b'what',
+                           headers={b'1': b'1'}),
+                succeeded(Always()))
+
+        self.assertEqual(1, len(consume_failures))
+        self.assertIn(
+            "Not all expected requests were made.  Still expecting:",
+            consume_failures[0])
+
+__all__ = ['ClientTests', 'ExtraCoverageTests']
