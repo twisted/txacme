@@ -249,41 +249,48 @@ class ClientTests(TestCase):
         If the server does not return the registration we expected, an
         :exc:`~acme.errors.UnexpectedUpdate` failure occurs.
         """
+        update = (
+            MatchesListwise([
+                Equals(b'POST'),
+                Equals(u'https://example.org/acme/new-reg'),
+                Equals({}),
+                ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                Always()]),
+            (http.CREATED,
+             {b'content-type': JSON_CONTENT_TYPE,
+              b'replay-nonce': jose.b64encode(b'Nonce2'),
+              b'location': b'https://example.org/acme/reg/1',
+              b'link': b','.join([
+                  b'<https://example.org/acme/new-authz>;rel="next"',
+                  b'<https://example.org/acme/recover-reg>;rel="recover"',
+                  b'<https://example.org/acme/terms>;rel="terms-of-service"',
+              ])},
+             _json_dumps({
+                 u'key': {
+                     u'n': u'alQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
+                           u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
+                     u'e': u'AQAB',
+                     u'kty': u'RSA'},
+                 u'contact': [u'mailto:example@example.com'],
+             })))
         sequence = RequestSequence(
             [_nonce_response(
                 u'https://example.org/acme/new-reg',
                 b'Nonce'),
-             (MatchesListwise([
-                 Equals(b'POST'),
-                 Equals(u'https://example.org/acme/new-reg'),
-                 Equals({}),
-                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
-                 Always()]),
-              (http.CREATED,
-               {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
-                b'location': b'https://example.org/acme/reg/1',
-                b'link': b','.join([
-                    b'<https://example.org/acme/new-authz>;rel="next"',
-                    b'<https://example.org/acme/recover-reg>;rel="recover"',
-                    b'<https://example.org/acme/terms>;rel="terms-of-service"',
-                ])},
-               _json_dumps({
-                   u'key': {
-                       u'n': u'alQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
-                             u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
-                       u'e': u'AQAB',
-                       u'kty': u'RSA'},
-                   u'contact': [u'mailto:example@example.com'],
-               })))],
+             update,
+             update],
             self.expectThat)
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        reg2 = messages.NewRegistration.from_data(email=u'foo@example.com')
         with sequence.consume(self.fail):
-            d = client.register(reg)
             self.assertThat(
-                d, failed_with(IsInstance(errors.UnexpectedUpdate)))
+                client.register(reg),
+                failed_with(IsInstance(errors.UnexpectedUpdate)))
+            self.assertThat(
+                client.register(reg2),
+                failed_with(IsInstance(errors.UnexpectedUpdate)))
 
     def test_register(self):
         """

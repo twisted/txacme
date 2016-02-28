@@ -184,11 +184,13 @@ class Client(object):
         Check that a registration response contains the registration we were
         expecting.
         """
-        if type(regr) == type(new_reg):
-            if regr != new_reg:
+        body = getattr(new_reg, 'body', new_reg)
+        for k, v in body.items():
+            if k == 'resource' or v is None:
+                continue
+            if regr.body[k] != v:
                 raise errors.UnexpectedUpdate(regr)
-        elif (regr.body.key != self._key.public_key() or
-                regr.body.contact != new_reg.contact):
+        if regr.body.key != self._key.public_key():
             raise errors.UnexpectedUpdate(regr)
         return regr
 
