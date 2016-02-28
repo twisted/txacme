@@ -7,10 +7,10 @@ from acme import errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
-from testtools import TestCase
+from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Equals, IsInstance, MatchesAll, MatchesListwise,
-    MatchesPredicate, MatchesStructure, Mismatch)
+    MatchesPredicate, MatchesStructure, Mismatch, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
@@ -202,11 +202,13 @@ class BadResponse(object):
     """
     code = attr.ib(default=http.OK)
     content_type = attr.ib(default=JSON_CONTENT_TYPE)
+    nonce = attr.ib(default=None)
     json = attr.ib(default=lambda: succeed({}))
 
     @property
     def headers(self):
-        return Headers({b'content-type': [self.content_type]})
+        return Headers({b'content-type': [self.content_type],
+                        b'replay-nonce': [self.nonce]})
 
 
 class ClientTests(TestCase):
@@ -385,6 +387,11 @@ class ClientTests(TestCase):
         # We should probably assert some stuff about the treq.HTTPClient, but
         # it's hard without doing awful mock stuff.
 
+
+class JWSClientTests(TestCase):
+    """
+    :class:`.JWSClient` implements JWS-signed requests over HTTP.
+    """
     def test_check_invalid_json(self):
         """
         If a JSON response is expected, but a response is received with a
@@ -432,7 +439,10 @@ class ClientTests(TestCase):
                     json=lambda: succeed({
                         u'type': u'unauthorized',
                         u'detail': u'blah blah blah'}))),
-            failed_with(IsInstance(ServerError)))
+            failed_with(
+                MatchesAll(
+                    IsInstance(ServerError),
+                    AfterPreprocessing(repr, StartsWith('ServerError')))))
 
     def test_check_expected_bad_json(self):
         """
@@ -444,6 +454,32 @@ class ClientTests(TestCase):
                 BadResponse(json=lambda: fail(ValueError()))),
             failed_with(IsInstance(errors.ClientError)))
 
+    def test_missing_nonce(self):
+        """
+        If the response from the server does not have a nonce,
+        :exc:`~acme.errors.MissingNonce` is raised.
+        """
+        client = JWSClient(None, None, None)
+        with ExpectedException(errors.MissingNonce):
+            client._add_nonce(BadResponse())
+
+    def test_bad_nonce(self):
+        """
+        If the response from the server has an unparseable nonce,
+        :exc:`~acme.errors.BadNonce` is raised.
+        """
+        client = JWSClient(None, None, None)
+        with ExpectedException(errors.BadNonce):
+            client._add_nonce(BadResponse(nonce=b'a!_'))
+
+    def test_already_nonce(self):
+        """
+        No request is made if we already have a nonce.
+        """
+        client = JWSClient(None, None, None)
+        client._nonces.add(u'nonce')
+        self.assertThat(client._get_nonce(b''), succeeded(Equals(u'nonce')))
+
 
 class ExtraCoverageTests(TestCase):
     """
@@ -453,6 +489,7 @@ class ExtraCoverageTests(TestCase):
     def test_always_never(self):
         self.assertThat(Always(), AfterPreprocessing(str, Equals('Always()')))
         self.assertThat(Never(), AfterPreprocessing(str, Equals('Never()')))
+        self.assertThat(None, Not(Never()))
 
     def test_unexpected_number_of_request_causes_failure(self):
         """
