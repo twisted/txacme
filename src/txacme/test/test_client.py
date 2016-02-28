@@ -85,7 +85,7 @@ class Never(object):
 
 class ClientFixture(Fixture):
     """
-    Create a :class:`.Client` for testing.
+    Create a :class:`~txacme.client.Client` for testing.
     """
     def __init__(self, sequence, directory=None, key=None, alg=jose.RS256):
         super(ClientFixture, self).__init__()
@@ -93,11 +93,11 @@ class ClientFixture(Fixture):
         if directory is None:
             self._directory = messages.Directory({
                 messages.NewRegistration:
-                URL.fromText(u'https://example.org/acme/new-reg'),
+                u'https://example.org/acme/new-reg',
                 messages.Revocation:
-                URL.fromText(u'https://example.org/acme/revoke-cert'),
+                u'https://example.org/acme/revoke-cert',
                 messages.NewAuthorization:
-                URL.fromText(u'https://example.org/acme/new-authz'),
+                u'https://example.org/acme/new-authz',
                 })
         else:
             self._directory = directory
@@ -124,7 +124,7 @@ def _nonce_response(url, nonce):
     :param bytes nonce: The nonce to return.
 
     :return: A request/response tuple suitable for use with
-        :class:`treq.testing.RequestSeuence`.
+        :class:`~treq.testing.RequestSequence`.
     """
     return (
         MatchesListwise([
@@ -317,5 +317,45 @@ class ClientTests(TestCase):
                     terms_of_service=Equals(
                         URL.fromText(u'https://example.org/acme/terms')),
                 )))
+
+    def test_from_directory(self):
+        """
+        :func:`txacme.client.Client.from_url` constructs a client with a
+        directory retrieved from the given URL.
+        """
+        new_reg = u'https://example.org/acme/new-reg'
+        sequence = RequestSequence(
+            [(MatchesListwise([
+                Equals(b'GET'),
+                Equals(u'https://example.org/acme/'),
+                Always(),
+                Always(),
+                Always()]),
+             (http.OK,
+              {b'content-type': b'application/json',
+               b'replay-nonce': jose.b64encode(b'Nonce')},
+              _json_dumps({
+                  u'new-reg': new_reg,
+                  u'revoke-cert': u'https://example.org/acme/revoke-cert',
+                  u'new-authz': u'https://example.org/acme/new-authz',
+              })))],
+            self.expectThat)
+        treq_client = HTTPClient(
+            agent=RequestTraversalAgent(
+                StringStubbingResource(sequence)),
+            data_to_body_producer=_SynchronousProducer)
+        with sequence.consume(self.fail):
+            d = Client.from_url(
+                reactor, URL.fromText(u'https://example.org/acme/'),
+                key=RSA_KEY_512, alg=jose.RS256,
+                jws_client=JWSClient(
+                    treq_client, key=RSA_KEY_512, alg=jose.RS256))
+            self.assertThat(
+                d,
+                succeeded(
+                    AfterPreprocessing(
+                        lambda client:
+                        client.directory[messages.NewRegistration()],
+                        Equals(new_reg))))
 
 __all__ = ['ClientTests']

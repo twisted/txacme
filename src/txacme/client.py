@@ -4,6 +4,7 @@ ACME client API (like :mod:`acme.client`) implementation for Twisted.
 import re
 
 from acme import errors, jose, jws, messages
+from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import inlineCallbacks, returnValue, succeed
 from twisted.logger import Logger
@@ -54,16 +55,35 @@ class Client(object):
     """
     ACME client interface.
     """
-    def __init__(self, reactor, directory, key, alg=jose.RS256,
-                 jws_client=None):
+    def __init__(self, reactor, directory, key, alg, jws_client):
+        self._client = jws_client
+        self.directory = directory
+        self._key = key
+
+    @classmethod
+    def from_url(cls, reactor, url, key, alg=jose.RS256, jws_client=None):
+        """
+        Construct a client from an ACME directory at a given URL.
+
+        :param twisted.python.url.URL url: The directory URL.
+        :param reactor: The Twisted reactor to use.
+        :param .JWSClient jws_client: The underlying client to use, or ``None``
+            to construct one.
+
+        :return: The constructed client.
+        :rtype: .Client
+        """
         if jws_client is None:
             pool = HTTPConnectionPool(reactor)
             agent = Agent(reactor, pool=pool)
-            self._client = JWSClient(HTTPClient(agent=agent), key, alg)
-        else:
-            self._client = jws_client
-        self.directory = directory
-        self._key = key
+            jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
+        return (
+            jws_client.get(url)
+            .addCallback(json_content)
+            .addCallback(messages.Directory.from_json)
+            .addCallback(
+                lambda directory: cls(
+                    reactor, directory, key, alg, jws_client)))
 
     def register(self, new_reg=None):
         """
@@ -78,7 +98,7 @@ class Client(object):
         if new_reg is None:
             new_reg = messages.NewRegistration()
 
-        d = self._client.post(self.directory[new_reg], new_reg)
+        d = self._client.post(URL.fromText(self.directory[new_reg]), new_reg)
         d.addCallback(self._parse_regr_response)
         d.addCallback(self._check_regr, new_reg)
         return d
@@ -252,7 +272,7 @@ class JWSClient(object):
         """
         return (
             self._send_request(u'GET', url, **kwargs)
-            .addCallback(self._check_request, content_type=content_type))
+            .addCallback(self._check_response, content_type=content_type))
 
     def _add_nonce(self, response):
         """
