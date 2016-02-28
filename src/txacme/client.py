@@ -159,6 +159,21 @@ JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
 REPLAY_NONCE_HEADER = b'Replay-Nonce'
 
 
+class ServerError(Exception):
+    """
+    :exc:`acme.messages.Error` isn't usable as an asynchronous exception,
+    because it doesn't allow setting the `__traceback__` attribute like Twisted
+    wants to do when cleaning Failures.  This type exists solely to wrap such
+    an error.
+    """
+    def __init__(self, message):
+        Exception.__init__(self, message)
+        self.message = message
+
+    def __repr__(self):
+        return 'ServerError({!r})'.format(self.message)
+
+
 class JWSClient(object):
     """
     HTTP client using JWS-signed messages.
@@ -204,8 +219,8 @@ class JWSClient(object):
             the response Content-Type does not match, :exc:`ClientError` is
             raised.
 
-        :raises ~acme.messages.Error: If server response body carries HTTP
-            Problem (draft-ietf-appsawg-http-problem-00).
+        :raises ServerError: If server response body carries HTTP Problem
+            (draft-ietf-appsawg-http-problem-00).
         :raises ~acme.errors.ClientError: In case of other networking errors.
         """
         logger.debug('Received response {response} '
@@ -224,7 +239,7 @@ class JWSClient(object):
         if 400 <= response.code < 600:
             if response_ct == JSON_ERROR_CONTENT_TYPE and jobj is not None:
                 try:
-                    raise messages.Error.from_json(jobj)
+                    raise ServerError(messages.Error.from_json(jobj))
                 except jose.DeserializationError as error:
                     # Couldn't deserialize JSON object
                     raise errors.ClientError((response, error))

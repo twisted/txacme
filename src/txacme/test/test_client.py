@@ -27,7 +27,7 @@ from twisted.web.http_headers import Headers
 
 from txacme.client import (
     _default_client, Client, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE,
-    JWSClient)
+    JWSClient, ServerError)
 from txacme.util import generate_private_key
 
 
@@ -432,7 +432,7 @@ class ClientTests(TestCase):
                     json=lambda: succeed({
                         u'type': u'unauthorized',
                         u'detail': u'blah blah blah'}))),
-            failed_with(IsInstance(messages.Error)))
+            failed_with(IsInstance(ServerError)))
 
     def test_check_expected_bad_json(self):
         """
