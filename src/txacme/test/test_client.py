@@ -342,6 +342,73 @@ class ClientTests(TestCase):
                     terms_of_service=Equals(u'https://example.org/acme/terms'),
                 )))
 
+    def test_register_existing(self):
+        """
+        If registration fails due to our key already being registered, the
+        existing registration is returned.
+        """
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/new-reg',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com']}))]),
+              (http.CONFLICT,
+               {b'content-type': JSON_ERROR_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'location': b'https://example.org/acme/reg/1',
+                },
+               _json_dumps(
+                   {u'status': http.CONFLICT,
+                    u'type': u'urn:acme:error:malformed',
+                    u'detail': u'Registration key is already in use'}
+               ))),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/reg/1'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({u'resource': u'reg'}))]),
+              (http.ACCEPTED,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'link': b','.join([
+                    b'<https://example.org/acme/new-authz>;rel="next"',
+                    b'<https://example.org/acme/recover-reg>;rel="recover"',
+                    b'<https://example.org/acme/terms>;rel="terms-of-service"',
+                ])},
+               _json_dumps({
+                   u'key': {
+                       u'n': u'rlQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
+                             u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
+                       u'e': u'AQAB',
+                       u'kty': u'RSA'},
+                   u'contact': [u'mailto:example@example.com'],
+                   u'agreement': u'https://example.org/acme/terms',
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        with sequence.consume(self.fail):
+            d = client.register(reg)
+            self.assertThat(
+                d, succeeded(MatchesStructure(
+                    body=MatchesStructure(
+                        key=Equals(RSA_KEY_512.public_key()),
+                        contact=Equals(reg.contact)),
+                    uri=Equals(u'https://example.org/acme/reg/1'),
+                    new_authzr_uri=Equals(
+                        u'https://example.org/acme/new-authz'),
+                    terms_of_service=Equals(u'https://example.org/acme/terms'),
+                )))
+
     def test_agree_to_tos(self):
         """
         Agreeing to the TOS returns a registration with the agreement updated.

@@ -200,7 +200,7 @@ class Client(object):
         """
         body = getattr(new_reg, 'body', new_reg)
         for k, v in body.items():
-            if k == 'resource' or v is None:
+            if k == 'resource' or not v:
                 continue
             if regr.body[k] != v:
                 raise errors.UnexpectedUpdate(regr)
