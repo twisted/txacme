@@ -21,7 +21,7 @@ from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.web import http
 
-from txacme.client import Client
+from txacme.client import Client, JWSClient
 from txacme.util import generate_private_key
 
 
@@ -113,7 +113,7 @@ class ClientFixture(Fixture):
             data_to_body_producer=_SynchronousProducer)
         self.client = Client(
             reactor, self._directory, self._key, self._alg,
-            treq_client=treq_client)
+            jws_client=JWSClient(treq_client, self._key, self._alg))
 
 
 def _nonce_response(url, nonce):

@@ -55,13 +55,13 @@ class Client(object):
     ACME client interface.
     """
     def __init__(self, reactor, directory, key, alg=jose.RS256,
-                 treq_client=None):
-        if treq_client is None:
+                 jws_client=None):
+        if jws_client is None:
             pool = HTTPConnectionPool(reactor)
             agent = Agent(reactor, pool=pool)
             self._client = JWSClient(HTTPClient(agent=agent), key, alg)
         else:
-            self._client = JWSClient(treq_client, key, alg)
+            self._client = jws_client
         self.directory = directory
         self._key = key
 
@@ -70,7 +70,7 @@ class Client(object):
         Create a new registration with the ACME server.
 
         :param ~acme.messages.NewRegistration new_reg: The registration message
-            to use, or ``None`` to construct one (the default).
+            to use, or ``None`` to construct one.
 
         :return: The registration resource.
         :rtype: ~acme.messages.RegistrationResource
@@ -130,7 +130,7 @@ REPLAY_NONCE_HEADER = b'Replay-Nonce'
 
 class JWSClient(object):
     """
-    HTTP client using JWS messaging.
+    HTTP client using JWS-signed messages.
     """
     def __init__(self, treq_client, key, alg, user_agent=b'txacme'):
         self._treq = treq_client
@@ -211,8 +211,8 @@ class JWSClient(object):
         """
         Send HTTP request.
 
-        :param unicode method: The HTTP method to use.
-        :param ~twisted.python.url.URL url: The URL to make the request to.
+        :param str method: The HTTP method to use.
+        :param twisted.python.url.URL url: The URL to make the request to.
 
         :return: Deferred firing with the HTTP response.
         """
@@ -225,18 +225,31 @@ class JWSClient(object):
             method, url.asText(), *args, **kwargs)
         return response
 
-    def head(self, *args, **kwargs):
+    def head(self, url, *args, **kwargs):
         """
         Send HEAD request without checking the response.
 
-        Note that `_check_response` is not called, as it is expected
-        that status code other than successfully 2xx will be returned, or
+        Note that `_check_response` is not called, as it is expected that
+        status code other than successfully 2xx will be returned, or
         messages2.Error will be raised by the server.
+
+        :param twisted.python.url.URL url: The URL to make the request to.
         """
-        return self._send_request(u'HEAD', *args, **kwargs)
+        return self._send_request(u'HEAD', url, *args, **kwargs)
 
     def get(self, url, content_type=JSON_CONTENT_TYPE, **kwargs):
-        """Send GET request and check response."""
+        """
+        Send GET request and check response.
+
+        :param str method: The HTTP method to use.
+        :param twisted.python.url.URL url: The URL to make the request to.
+
+        :raises acme.messages.Error: If server response body carries HTTP
+            Problem (draft-ietf-appsawg-http-problem-00).
+        :raises acme.errors.ClientError: In case of other protocol errors.
+
+        :return: Deferred firing with the checked HTTP response.
+        """
         return (
             self._send_request(u'GET', url, **kwargs)
             .addCallback(self._check_request, content_type=content_type))
@@ -245,7 +258,7 @@ class JWSClient(object):
         """
         Store a nonce from a response we received.
 
-        :param ~twisted.web.iweb.IResponse response: The HTTP response.
+        :param twisted.web.iweb.IResponse response: The HTTP response.
 
         :return: The response, unmodified.
         """
@@ -277,7 +290,19 @@ class JWSClient(object):
                 )
 
     def post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
-        """POST object wrapped in `.JWS` and check response."""
+        """
+        POST an object and check the response.
+
+        :param twisted.python.url.URL url: The URL to request.
+        :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
+            payload of the request.
+        :param bytes content_type: The expected content type of the response.
+            By default, JSON.
+
+        :raises acme.messages.Error: If server response body carries HTTP
+            Problem (draft-ietf-appsawg-http-problem-00).
+        :raises acme.errors.ClientError: In case of other protocol errors.
+        """
         return (
             self._get_nonce(url)
             .addCallback(lambda nonce: self._wrap_in_jws(obj, nonce))
@@ -290,4 +315,6 @@ class JWSClient(object):
                 self._check_response(response, content_type=content_type))
             )
 
-__all__ = ['Client']
+__all__ = [
+    'Client', 'JWSClient', 'JSON_CONTENT_TYPE', 'JSON_ERROR_CONTENT_TYPE',
+    'REPLAY_NONCE_HEADER']
