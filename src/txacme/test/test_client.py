@@ -93,20 +93,17 @@ class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, directory=None, key=None, alg=jose.RS256):
+    def __init__(self, sequence, directory, key=None, alg=jose.RS256):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
-        if directory is None:
-            self._directory = messages.Directory({
-                messages.NewRegistration:
-                u'https://example.org/acme/new-reg',
-                messages.Revocation:
-                u'https://example.org/acme/revoke-cert',
-                messages.NewAuthorization:
-                u'https://example.org/acme/new-authz',
-                })
-        else:
-            self._directory = directory
+        self._directory = messages.Directory({
+            messages.NewRegistration:
+            u'https://example.org/acme/new-reg',
+            messages.Revocation:
+            u'https://example.org/acme/revoke-cert',
+            messages.NewAuthorization:
+            u'https://example.org/acme/new-authz',
+            })
         if key is None:
             key = jose.JWKRSA(key=generate_private_key('rsa'))
         self._key = key
