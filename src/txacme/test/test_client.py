@@ -116,7 +116,7 @@ class ClientFixture(Fixture):
                 StringStubbingResource(self._sequence)),
             data_to_body_producer=_SynchronousProducer)
         self.client = Client(
-            reactor, self._directory, self._key, self._alg,
+            reactor, self._directory, self._key,
             jws_client=JWSClient(treq_client, self._key, self._alg))
 
 

@@ -65,7 +65,7 @@ class Client(object):
     """
     ACME client interface.
     """
-    def __init__(self, reactor, directory, key, alg, jws_client):
+    def __init__(self, reactor, directory, key, jws_client):
         self._client = jws_client
         self.directory = directory
         self._key = key
@@ -90,7 +90,7 @@ class Client(object):
             .addCallback(messages.Directory.from_json)
             .addCallback(
                 lambda directory: cls(
-                    reactor, directory, key, alg, jws_client)))
+                    reactor, directory, key, jws_client)))
 
     def register(self, new_reg=None):
         """
