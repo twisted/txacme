@@ -26,7 +26,7 @@ def _parse_header_links(value):
 
     :param bytes value: The header value.
 
-    :rtype: dict
+    :rtype: `dict`
     :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
     """
     links = {}
@@ -65,7 +65,7 @@ class Client(object):
     """
     ACME client interface.
     """
-    def __init__(self, reactor, directory, key, jws_client):
+    def __init__(self, directory, reactor, key, jws_client):
         self._client = jws_client
         self.directory = directory
         self._key = key
@@ -81,16 +81,14 @@ class Client(object):
             to construct one.
 
         :return: The constructed client.
-        :rtype: Client
+        :rtype: `Client`
         """
         jws_client = _default_client(jws_client, reactor, key, alg)
         return (
             jws_client.get(url.asText())
             .addCallback(json_content)
             .addCallback(messages.Directory.from_json)
-            .addCallback(
-                lambda directory: cls(
-                    reactor, directory, key, jws_client)))
+            .addCallback(cls, reactor, key, jws_client))
 
     def register(self, new_reg=None):
         """
@@ -100,7 +98,7 @@ class Client(object):
             to use, or ``None`` to construct one.
 
         :return: The registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
@@ -130,7 +128,7 @@ class Client(object):
             update.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         return self.update_registration(
             regr.update(
@@ -148,7 +146,7 @@ class Client(object):
             specified if a :class:`~acme.messages.NewRegistration` is provided.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         if uri is None:
             uri = regr.uri
@@ -240,7 +238,7 @@ class JWSClient(object):
 
         self._nonces = set()
 
-    def _wrap_in_jws(self, obj, nonce):
+    def _wrap_in_jws(self, nonce, obj):
         """
         Wrap ``JSONDeSerializable`` object in JWS.
 
@@ -249,7 +247,7 @@ class JWSClient(object):
         :param ~acme.jose.interfaces.JSONDeSerializable obj:
         :param bytes nonce:
 
-        :rtype: bytes
+        :rtype: `bytes`
         :return: JSON-encoded data
         """
         jobj = obj.json_dumps().encode()
@@ -330,8 +328,8 @@ class JWSClient(object):
         """
         Send HEAD request without checking the response.
 
-        Note that `_check_response` is not called, as there will be no response
-        body to check.
+        Note that ``_check_response`` is not called, as there will be no
+        response body to check.
 
         :param str url: The URL to make the request to.
         """
@@ -407,14 +405,12 @@ class JWSClient(object):
         headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
         return (
             self._get_nonce(url)
-            .addCallback(lambda nonce: self._wrap_in_jws(obj, nonce))
+            .addCallback(self._wrap_in_jws, obj)
             .addCallback(
                 lambda data: self._send_request(
                     u'POST', url, data=data, **kwargs))
             .addCallback(self._add_nonce)
-            .addCallback(
-                lambda response:
-                self._check_response(response, content_type=content_type))
+            .addCallback(self._check_response, content_type=content_type)
             )
 
 __all__ = [

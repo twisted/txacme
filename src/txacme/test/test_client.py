@@ -116,7 +116,7 @@ class ClientFixture(Fixture):
                 StringStubbingResource(self._sequence)),
             data_to_body_producer=_SynchronousProducer)
         self.client = Client(
-            reactor, self._directory, self._key,
+            self._directory, reactor, self._key,
             jws_client=JWSClient(treq_client, self._key, self._alg))
 
 
@@ -749,7 +749,7 @@ class ExtraCoverageTests(TestCase):
 
     def test_consume_context_manager_fails_on_remaining_requests(self):
         """
-        If the `consume` context manager is used, if there are any remaining
+        If the ``consume`` context manager is used, if there are any remaining
         expecting requests, the test case will be failed.
         """
         sequence = RequestSequence(
