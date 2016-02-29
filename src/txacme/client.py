@@ -46,7 +46,6 @@ def _parse_header_links(value):
             except ValueError:
                 break
             link[key.strip(replace_chars)] = value.strip(replace_chars)
-        link[u'url'] = link[u'url']
         links[link.get(u'rel') or link.get(u'url')] = link
     return links
 
