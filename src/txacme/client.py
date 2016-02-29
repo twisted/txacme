@@ -75,7 +75,7 @@ class Client(object):
         """
         Construct a client from an ACME directory at a given URL.
 
-        :param twisted.python.url.URL url: The directory URL.
+        :param url: The ``twisted.python.url.URL`` to fetch the directory from.
         :param reactor: The Twisted reactor to use.
         :param JWSClient jws_client: The underlying client to use, or ``None``
             to construct one.
@@ -130,7 +130,7 @@ class Client(object):
             update.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource.
+        :rtype: ~acme.messages.RegistrationResource
         """
         return self.update_registration(
             regr.update(
@@ -148,7 +148,7 @@ class Client(object):
             specified if a :class:`~acme.messages.NewRegistration` is provided.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource.
+        :rtype: ~acme.messages.RegistrationResource
         """
         if uri is None:
             uri = regr.uri
