@@ -7,6 +7,8 @@ from acme import errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
+from hypothesis import strategies as s
+from hypothesis import assume, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, ContainsDict, Equals, IsInstance,
@@ -569,6 +571,15 @@ class ClientTests(TestCase):
         name = u'example.com'
         identifier_json = {u'type': u'dns',
                            u'value': name}
+        identifier = messages.Identifier.from_json(identifier_json)
+        challenges = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            ]
         sequence = RequestSequence(
             [_nonce_response(
                 u'https://example.org/acme/new-authz',
@@ -591,14 +602,7 @@ class ClientTests(TestCase):
                _json_dumps({
                    u'status': u'pending',
                    u'identifier': identifier_json,
-                   u'challenges': [
-                       {u'type': u'http-01',
-                        u'uri': u'https://example.org/acme/authz/1/0',
-                        u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
-                       {u'type': u'dns-01',
-                        u'uri': u'https://example.org/acme/authz/1/1',
-                        u'token': u'DGyRejmCefe7v4NfDGDKfA'},
-                       ],
+                   u'challenges': challenges,
                    u'combinations': [[0], [1]],
                })))],
             self.expectThat)
@@ -606,18 +610,52 @@ class ClientTests(TestCase):
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
             self.assertThat(
-                client.request_challenges(
-                    messages.Identifier(
-                        typ=messages.IDENTIFIER_FQDN, value=name)),
+                client.request_challenges(identifier),
                 succeeded(MatchesStructure(
                     body=MatchesStructure(
-                        key=Equals(RSA_KEY_512.public_key()),
-                        contact=Equals(reg.contact)),
-                    uri=Equals(u'https://example.org/acme/reg/1'),
-                    new_authzr_uri=Equals(
-                        u'https://example.org/acme/new-authz'),
-                    terms_of_service=Equals(u'https://example.org/acme/terms'),
+                        identifier=Equals(identifier),
+                        challenges=Equals(
+                            tuple(map(
+                                messages.ChallengeBody.from_json,
+                                challenges))),
+                        combinations=Equals(((0,), (1,))),
+                        status=Equals(messages.STATUS_PENDING)),
+                    new_cert_uri=Equals(
+                        u'https://example.org/acme/new-cert'),
                 )))
+
+    @given(s.sampled_from(http.RESPONSES.keys()),
+           s.sampled_from(http.RESPONSES.keys()))
+    def test_expect_response_wrong_code(self, expected, actual):
+        """
+        ``_expect_response`` raises `~acme.errors.ClientError` if the response
+        code does not match the expected code.
+        """
+        assume(expected != actual)
+        response = BadResponse(code=actual)
+        with ExpectedException(errors.ClientError):
+            Client._expect_response(response, expected)
+
+    def test_authorization_missing_link(self):
+        """
+        ``_parse_authorization`` raises `~acme.errors.ClientError` if the
+        ``"next"`` link is missing.
+        """
+        response = BadResponse()
+        with ExpectedException(errors.ClientError, '"next" link missing'):
+            Client._parse_authorization(response)
+
+    def test_authorization_unexpected_identifier(self):
+        """
+        ``_check_authorization`` raises `~acme.errors.UnexpectedUpdate` if the
+        return identifier doesn't match.
+        """
+        with ExpectedException(errors.UnexpectedUpdate):
+            Client._check_authorization(
+                messages.AuthorizationResource(
+                    body=messages.Authorization()),
+                messages.Identifier(
+                    typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
 
 
 class JWSClientTests(TestCase):

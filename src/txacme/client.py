@@ -204,6 +204,68 @@ class Client(object):
             raise errors.UnexpectedUpdate(regr)
         return regr
 
+    def request_challenges(self, identifier):
+        """
+        Create a new authorization.
+
+        :param ~acme.messages.Identifier identifier: The identifier to
+            authorize.
+
+        :return: The new authorization resource.
+        :rtype: `~acme.messages.AuthorizationResource`
+        """
+        message = messages.NewAuthorization(identifier=identifier)
+        return (
+            self._client.post(
+                self.directory[message], message)
+            .addCallback(self._expect_response, http.CREATED)
+            .addCallback(self._parse_authorization)
+            .addCallback(self._check_authorization, identifier)
+            )
+
+    @classmethod
+    def _expect_response(cls, response, code):
+        """
+        Ensure we got the expected response code.
+        """
+        if response.code != code:
+            raise errors.ClientError(
+                'Expected {!r} response but got {!r}'.format(
+                    code, response.code))
+        return response
+
+    @classmethod
+    def _parse_authorization(cls, response):
+        """
+        Parse an authorization resource.
+        """
+        link = response.headers.getRawHeaders(b'link', [b''])[0]
+        links = _parse_header_links(link)
+        try:
+            new_cert_uri = links['next']['url']
+        except KeyError:
+            raise errors.ClientError('"next" link missing')
+        location = response.headers.getRawHeaders(b'location', [None])[0]
+        if location is not None:
+            uri = location.decode('ascii')
+        return (
+            response.json()
+            .addCallback(
+                lambda body: messages.AuthorizationResource(
+                    body=messages.Authorization.from_json(body),
+                    uri=uri,
+                    new_cert_uri=new_cert_uri))
+            )
+
+    @classmethod
+    def _check_authorization(cls, auth, identifier):
+        """
+        Check that the authorization we got is the one we expected.
+        """
+        if auth.body.identifier != identifier:
+            raise errors.UnexpectedUpdate(auth)
+        return auth
+
 
 JSON_CONTENT_TYPE = b'application/json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
