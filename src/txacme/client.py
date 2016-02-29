@@ -273,7 +273,7 @@ class JWSClient(object):
             the response Content-Type does not match, :exc:`ClientError` is
             raised.
 
-        :raises ServerError: If server response body carries HTTP Problem
+        :raises .ServerError: If server response body carries HTTP Problem
             (draft-ietf-appsawg-http-problem-00).
         :raises ~acme.errors.ClientError: In case of other networking errors.
         """
@@ -344,7 +344,7 @@ class JWSClient(object):
         :param str method: The HTTP method to use.
         :param str url: The URL to make the request to.
 
-        :raises acme.messages.Error: If server response body carries HTTP
+        :raises txacme.client.ServerError: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
 
@@ -399,7 +399,7 @@ class JWSClient(object):
         :param bytes content_type: The expected content type of the response.
             By default, JSON.
 
-        :raises acme.messages.Error: If server response body carries HTTP
+        :raises txacme.client.ServerError: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
         """

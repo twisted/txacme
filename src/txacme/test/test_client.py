@@ -560,6 +560,65 @@ class ClientTests(TestCase):
         # We should probably assert some stuff about the treq.HTTPClient, but
         # it's hard without doing awful mock stuff.
 
+    def test_request_challenges(self):
+        """
+        :meth:`~txacme.client.Client.request_challenges` creates a new
+        authorization, and returns the authorization resource with a list of
+        possible challenges to proceed with.
+        """
+        name = u'example.com'
+        identifier_json = {u'type': u'dns',
+                           u'value': name}
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/new-authz',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-authz'),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'new-authz',
+                     u'identifier': identifier_json,
+                     }))]),
+              (http.CREATED,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'location': b'https://example.org/acme/authz/1',
+                b'link': b'<https://example.org/acme/new-cert>;rel="next"',
+                },
+               _json_dumps({
+                   u'status': u'pending',
+                   u'identifier': identifier_json,
+                   u'challenges': [
+                       {u'type': u'http-01',
+                        u'uri': u'https://example.org/acme/authz/1/0',
+                        u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+                       {u'type': u'dns-01',
+                        u'uri': u'https://example.org/acme/authz/1/1',
+                        u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+                       ],
+                   u'combinations': [[0], [1]],
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.request_challenges(
+                    messages.Identifier(
+                        typ=messages.IDENTIFIER_FQDN, value=name)),
+                succeeded(MatchesStructure(
+                    body=MatchesStructure(
+                        key=Equals(RSA_KEY_512.public_key()),
+                        contact=Equals(reg.contact)),
+                    uri=Equals(u'https://example.org/acme/reg/1'),
+                    new_authzr_uri=Equals(
+                        u'https://example.org/acme/new-authz'),
+                    terms_of_service=Equals(u'https://example.org/acme/terms'),
+                )))
+
 
 class JWSClientTests(TestCase):
     """
