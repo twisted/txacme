@@ -39,6 +39,11 @@ matrix:
         - libenchant-dev
   - python: 3.5
     env: TOXENV=flake8
+  allow_failures:
+  - env: TOXENV=py27-twtrunk
+  - env: TOXENV=py34-twtrunk
+  - env: TOXENV=py35-twtrunk
+  - env: TOXENV=pypy-twtrunk
 install:
   # Upgrade packaging tools separately, so that other installations are
   # performed with the upgraded tools.
