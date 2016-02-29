@@ -551,8 +551,8 @@ class ClientTests(TestCase):
 
     def test_default_client(self):
         """
-        :func:`~txacme.client._default_client` constructs a client if one was
-        not provided.
+        ``~txacme.client._default_client`` constructs a client if one was not
+        provided.
         """
         reactor = MemoryReactor()
         client = _default_client(None, reactor, RSA_KEY_512, jose.RS384)

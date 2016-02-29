@@ -12,6 +12,8 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
+import os
+import subprocess
 import sys
 
 try:
@@ -305,3 +307,17 @@ intersphinx_mapping = {
     'twisted': ('https://twisted.readthedocs.org/en/latest/',
                 (None, 'twisted-objects.inv')),
     }
+
+def run_apidoc(_):
+    modules = ['../src/txacme']
+    for module in modules:
+        cur_dir = os.path.abspath(os.path.dirname(__file__))
+        output_path = os.path.join(cur_dir, 'api')
+        cmd_path = 'sphinx-apidoc'
+        if hasattr(sys, 'real_prefix'):  # Check to see if we are in a virtualenv
+            # If we are, assemble the path manually
+            cmd_path = os.path.abspath(os.path.join(sys.prefix, 'bin', 'sphinx-apidoc'))
+        subprocess.check_call([cmd_path, '-e', '-o', output_path, module, '--force'])
+
+def setup(app):
+    app.connect('builder-inited', run_apidoc)
