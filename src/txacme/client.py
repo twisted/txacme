@@ -77,11 +77,11 @@ class Client(object):
 
         :param twisted.python.url.URL url: The directory URL.
         :param reactor: The Twisted reactor to use.
-        :param .JWSClient jws_client: The underlying client to use, or ``None``
+        :param JWSClient jws_client: The underlying client to use, or ``None``
             to construct one.
 
         :return: The constructed client.
-        :rtype: .Client
+        :rtype: Client
         """
         jws_client = _default_client(jws_client, reactor, key, alg)
         return (
@@ -144,7 +144,7 @@ class Client(object):
         :param ~acme.messages.RegistrationResource regr: The registration to
             update.  Can be a :class:`~acme.messages.NewRegistration` instead,
             in order to create a new registration.
-        :param twisted.python.url.URL uri: The url to submit to.  Must be
+        :param str uri: The url to submit to.  Must be
             specified if a :class:`~acme.messages.NewRegistration` is provided.
 
         :return: The updated registration resource.
@@ -242,7 +242,7 @@ class JWSClient(object):
 
     def _wrap_in_jws(self, obj, nonce):
         """
-        Wrap `JSONDeSerializable` object in JWS.
+        Wrap ``JSONDeSerializable`` object in JWS.
 
         ..  todo:: Implement ``acmePath``.
 
@@ -313,7 +313,7 @@ class JWSClient(object):
         Send HTTP request.
 
         :param str method: The HTTP method to use.
-        :param twisted.python.url.URL url: The URL to make the request to.
+        :param str url: The URL to make the request to.
 
         :return: Deferred firing with the HTTP response.
         """
@@ -330,11 +330,10 @@ class JWSClient(object):
         """
         Send HEAD request without checking the response.
 
-        Note that `_check_response` is not called, as it is expected that
-        status code other than successfully 2xx will be returned, or
-        messages2.Error will be raised by the server.
+        Note that `_check_response` is not called, as there will be no response
+        body to check.
 
-        :param twisted.python.url.URL url: The URL to make the request to.
+        :param str url: The URL to make the request to.
         """
         return self._send_request(u'HEAD', url, *args, **kwargs)
 
@@ -343,7 +342,7 @@ class JWSClient(object):
         Send GET request and check response.
 
         :param str method: The HTTP method to use.
-        :param twisted.python.url.URL url: The URL to make the request to.
+        :param str url: The URL to make the request to.
 
         :raises acme.messages.Error: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
@@ -394,7 +393,7 @@ class JWSClient(object):
         """
         POST an object and check the response.
 
-        :param twisted.python.url.URL url: The URL to request.
+        :param str url: The URL to request.
         :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
             payload of the request.
         :param bytes content_type: The expected content type of the response.
