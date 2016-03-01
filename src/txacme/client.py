@@ -18,7 +18,7 @@ logger = Logger()
 
 # Borrowed from requests, with modifications.
 
-def _parse_header_links(value):
+def _parse_header_links(response):
     """
     Parse the links from a Link: header field.
 
@@ -29,8 +29,9 @@ def _parse_header_links(value):
     :rtype: `dict`
     :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
     """
+    values = response.headers.getRawHeaders(b'link', [b''])
     links = {}
-    value = value.decode('ascii')
+    value = b','.join(values).decode('ascii')
     replace_chars = u' \'"'
     for val in re.split(u', *<', value):
         try:
@@ -59,6 +60,21 @@ def _default_client(jws_client, reactor, key, alg):
         agent = Agent(reactor, pool=pool)
         jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
     return jws_client
+
+
+def fqdn_identifier(fqdn):
+    """
+    Construct an identifier from an FQDN.
+
+    Trivial implementation, just saves on typing.
+
+    :param str fqdn: The domain name.
+
+    :return: The identifier.
+    :rtype: `~acme.messages.Identifier`
+    """
+    return messages.Identifier(
+        typ=messages.IDENTIFIER_FQDN, value=fqdn)
 
 
 class Client(object):
@@ -165,8 +181,7 @@ class Client(object):
         """
         Parse a registration response from the server.
         """
-        link = response.headers.getRawHeaders(b'link', [b''])[0]
-        links = _parse_header_links(link)
+        links = _parse_header_links(response)
         if u'terms-of-service' in links:
             terms_of_service = links[u'terms-of-service'][u'url']
         if u'next' in links:
@@ -239,8 +254,7 @@ class Client(object):
         """
         Parse an authorization resource.
         """
-        link = response.headers.getRawHeaders(b'link', [b''])[0]
-        links = _parse_header_links(link)
+        links = _parse_header_links(response)
         try:
             new_cert_uri = links['next']['url']
         except KeyError:
@@ -265,6 +279,51 @@ class Client(object):
         if auth.body.identifier != identifier:
             raise errors.UnexpectedUpdate(auth)
         return auth
+
+    def answer_challenge(self, challenge_body, response):
+        """
+        Respond to an authorization challenge.
+
+        :param ~acme.messages.ChallengeBody challenge_body: The challenge being
+            responded to.
+        :param ~acme.challenges.ChallengeResponse response: The response to the
+            challenge.
+
+        :return: The updated challenge resource.
+        :rtype: `~acme.messages.ChallengeResource`
+        """
+        return (
+            self._client.post(challenge_body.uri, response)
+            .addCallback(self._parse_challenge)
+            .addCallback(self._check_challenge, challenge_body)
+            )
+
+    @classmethod
+    def _parse_challenge(cls, response):
+        """
+        Parse a challenge resource.
+        """
+        links = _parse_header_links(response)
+        try:
+            authzr_uri = links['up']['url']
+        except KeyError:
+            raise errors.ClientError('"up" link missing')
+        return (
+            response.json()
+            .addCallback(
+                lambda body: messages.ChallengeResource(
+                    authzr_uri=authzr_uri,
+                    body=messages.ChallengeBody.from_json(body)))
+            )
+
+    @classmethod
+    def _check_challenge(cls, challenge, challenge_body):
+        """
+        Check that the challenge resource we got is the one we expected.
+        """
+        if challenge.uri != challenge_body.uri:
+            raise errors.UnexpectedUpdate(challenge.uri)
+        return challenge
 
 
 JSON_CONTENT_TYPE = b'application/json'
@@ -477,4 +536,4 @@ class JWSClient(object):
 
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
-    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER']
+    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier']

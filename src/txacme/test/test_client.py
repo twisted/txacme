@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
 import attr
-from acme import errors, jose, jws, messages
+from acme import challenges, errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
@@ -29,9 +29,40 @@ from twisted.web import http
 from twisted.web.http_headers import Headers
 
 from txacme.client import (
-    _default_client, Client, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE,
-    JWSClient, ServerError)
+    _default_client, Client, fqdn_identifier, JSON_CONTENT_TYPE,
+    JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
 from txacme.util import generate_private_key
+
+
+def dns_label():
+    """
+    Strategy for generating limited charset DNS labels.
+    """
+    # This is too limited, but whatever
+    return s.text(
+        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
+        min_size=1, max_size=63)
+
+
+def dns_name():
+    """
+    Strategy for generating limited charset DNS names.
+    """
+    return (
+        s.lists(dns_label(), min_size=1, max_size=10)
+        .map(u'.'.join)
+        .filter(lambda s: len(s) <= 253))
+
+
+def urls():
+    """
+    Strategy for generating `~twisted.python.url.URL`s.
+    """
+    return s.builds(
+        URL,
+        scheme=s.just(u'https'),
+        host=dns_name(),
+        path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
 
 
 def failed_with(matcher):
@@ -656,6 +687,49 @@ class ClientTests(TestCase):
                     body=messages.Authorization()),
                 messages.Identifier(
                     typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
+
+    @given(dns_name())
+    def test_fqdn_identifier(self, name):
+        """
+        `~txacme.client.fqdn_identifier` constructs an
+        `~acme.messages.Identifier` of the right type.
+        """
+        self.assertThat(
+            fqdn_identifier(name),
+            MatchesStructure(
+                typ=Equals(messages.IDENTIFIER_FQDN),
+                value=Equals(name)))
+
+    def test_answer_challenge(self):
+        """
+        `~txacme.client.Client.answer_challenge` responds to a challenge and
+        returns the updated challenge.
+        """
+        assert False
+
+    def test_challenge_missing_link(self):
+        """
+        ``_parse_challenge`` raises `~acme.errors.ClientError` if the ``"up"``
+        link is missing.
+        """
+        response = BadResponse()
+        with ExpectedException(errors.ClientError, '"up" link missing'):
+            Client._parse_challenge(response)
+
+    @given(urls(), urls())
+    def test_challenge_unexpected_uri(self, url1, url2):
+        """
+        ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
+        challenge does not have the expected URI.
+        """
+        url1 = url1.asText()
+        url2 = url2.asText()
+        assume(url1 != url2)
+        with ExpectedException(errors.UnexpectedUpdate):
+            Client._check_challenge(
+                messages.ChallengeResource(
+                    body=messages.ChallengeBody(chall=None, uri=url1)),
+                messages.ChallengeBody(chall=None, uri=url2))
 
 
 class JWSClientTests(TestCase):
