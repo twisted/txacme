@@ -33,6 +33,7 @@ class ClientTests(TestCase):
         yield client.agree_to_tos(reg2)
 
         auth = yield client.request_challenges(fqdn_identifier(HOST))
+        print(auth)
 
         # AuthorizationResource(
         #     body=Authorization(

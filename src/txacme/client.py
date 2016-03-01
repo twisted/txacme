@@ -259,9 +259,8 @@ class Client(object):
             new_cert_uri = links['next']['url']
         except KeyError:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location', [None])[0]
-        if location is not None:
-            uri = location.decode('ascii')
+        location = response.headers.getRawHeaders(b'location')[0]
+        uri = location.decode('ascii')
         return (
             response.json()
             .addCallback(

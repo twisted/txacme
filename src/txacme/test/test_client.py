@@ -8,7 +8,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from hypothesis import strategies as s
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, ContainsDict, Equals, IsInstance,
@@ -41,7 +41,7 @@ def dns_label():
     # This is too limited, but whatever
     return s.text(
         u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
-        min_size=1, max_size=63)
+        min_size=1, max_size=25)
 
 
 def dns_name():
@@ -50,8 +50,7 @@ def dns_name():
     """
     return (
         s.lists(dns_label(), min_size=1, max_size=10)
-        .map(u'.'.join)
-        .filter(lambda s: len(s) <= 253))
+        .map(u'.'.join))
 
 
 def urls():
@@ -655,6 +654,7 @@ class ClientTests(TestCase):
                         u'https://example.org/acme/new-cert'),
                 )))
 
+    @example(http.CREATED, http.FOUND)
     @given(s.sampled_from(http.RESPONSES.keys()),
            s.sampled_from(http.RESPONSES.keys()))
     def test_expect_response_wrong_code(self, expected, actual):
@@ -688,6 +688,7 @@ class ClientTests(TestCase):
                 messages.Identifier(
                     typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
 
+    @example(u'example.com')
     @given(dns_name())
     def test_fqdn_identifier(self, name):
         """
@@ -705,7 +706,50 @@ class ClientTests(TestCase):
         `~txacme.client.Client.answer_challenge` responds to a challenge and
         returns the updated challenge.
         """
-        assert False
+        key_authorization = u'blahblahblah'
+        uri = u'https://example.org/acme/authz/1/0'
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/authz/1/0',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(uri),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'challenge',
+                     u'type': u'http-01',
+                     u'keyAuthorization': key_authorization,
+                     }))]),
+              (http.OK,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'link': b'<https://example.org/acme/authz/1>;rel="up"',
+                },
+               _json_dumps({
+                   u'uri': uri,
+                   u'type': u'http-01',
+                   u'status': u'processing',
+                   u'token': u'DGyRejmCefe7v4NfDGDKfA',
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.answer_challenge(
+                    messages.ChallengeBody(
+                        uri=uri,
+                        chall=challenges.HTTP01(token=b'blahblah'),
+                        status=messages.STATUS_PENDING),
+                    challenges.HTTP01Response(
+                        key_authorization=key_authorization)),
+                succeeded(MatchesStructure(
+                    body=MatchesStructure(),
+                    authzr_uri=Equals(
+                        u'https://example.org/acme/authz/1'),
+                )))
 
     def test_challenge_missing_link(self):
         """
@@ -716,14 +760,16 @@ class ClientTests(TestCase):
         with ExpectedException(errors.ClientError, '"up" link missing'):
             Client._parse_challenge(response)
 
+    @example(URL.fromText(u'https://example.org/'),
+             URL.fromText(u'https://example.com/'))
     @given(urls(), urls())
     def test_challenge_unexpected_uri(self, url1, url2):
         """
         ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
         challenge does not have the expected URI.
         """
-        url1 = url1.asText()
-        url2 = url2.asText()
+        url1 = url1.asURI().asText()
+        url2 = url2.asURI().asText()
         assume(url1 != url2)
         with ExpectedException(errors.UnexpectedUpdate):
             Client._check_challenge(
