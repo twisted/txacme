@@ -15,3 +15,15 @@ def generate_private_key(key_type):
         return rsa.generate_private_key(
             public_exponent=65537, key_size=2048, backend=default_backend())
     raise ValueError(key_type)
+
+
+def generate_tls_sni_01_cert(key_type=u'rsa'):
+    """
+    Generate a certificate/key pair for responding to a tls-sni-01 challenge.
+
+    :param str key_type: The type of key to generate; usually not necessary.
+
+    :rtype: ``Tuple[`~cryptography.x509.Certificate`, PrivateKey]``
+    :return: A tuple of the certificate and private key.
+    """
+    
