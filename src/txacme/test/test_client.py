@@ -29,8 +29,8 @@ from twisted.web import http
 from twisted.web.http_headers import Headers
 
 from txacme.client import (
-    _default_client, Client, fqdn_identifier, JSON_CONTENT_TYPE,
-    JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
+    _default_client, _parse_header_links, Client, fqdn_identifier,
+    JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
 from txacme.util import generate_private_key
 
 
@@ -229,7 +229,7 @@ def on_jws(matcher):
 
 
 @attr.s
-class BadResponse(object):
+class TestResponse(object):
     """
     Test response implementation for various bad response cases.
     """
@@ -237,11 +237,13 @@ class BadResponse(object):
     content_type = attr.ib(default=JSON_CONTENT_TYPE)
     nonce = attr.ib(default=None)
     json = attr.ib(default=lambda: succeed({}))
+    links = attr.ib(default=None)
 
     @property
     def headers(self):
         return Headers({b'content-type': [self.content_type],
-                        b'replay-nonce': [self.nonce]})
+                        b'replay-nonce': [self.nonce],
+                        b'link': self.links})
 
 
 class ClientTests(TestCase):
@@ -663,7 +665,7 @@ class ClientTests(TestCase):
         code does not match the expected code.
         """
         assume(expected != actual)
-        response = BadResponse(code=actual)
+        response = TestResponse(code=actual)
         with ExpectedException(errors.ClientError):
             Client._expect_response(response, expected)
 
@@ -672,7 +674,7 @@ class ClientTests(TestCase):
         ``_parse_authorization`` raises `~acme.errors.ClientError` if the
         ``"next"`` link is missing.
         """
-        response = BadResponse()
+        response = TestResponse()
         with ExpectedException(errors.ClientError, '"next" link missing'):
             Client._parse_authorization(response)
 
@@ -756,7 +758,7 @@ class ClientTests(TestCase):
         ``_parse_challenge`` raises `~acme.errors.ClientError` if the ``"up"``
         link is missing.
         """
-        response = BadResponse()
+        response = TestResponse()
         with ExpectedException(errors.ClientError, '"up" link missing'):
             Client._parse_challenge(response)
 
@@ -789,7 +791,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(content_type=b'application/octet-stream')),
+                TestResponse(content_type=b'application/octet-stream')),
             failed_with(IsInstance(errors.ClientError)))
 
     def test_check_invalid_error_type(self):
@@ -799,7 +801,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=b'application/octet-stream')),
             failed_with(IsInstance(errors.ClientError)))
@@ -811,7 +813,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=JSON_ERROR_CONTENT_TYPE)),
             failed_with(IsInstance(errors.ClientError)))
@@ -823,7 +825,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=JSON_ERROR_CONTENT_TYPE,
                     json=lambda: succeed({
@@ -841,7 +843,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(json=lambda: fail(ValueError()))),
+                TestResponse(json=lambda: fail(ValueError()))),
             failed_with(IsInstance(errors.ClientError)))
 
     def test_missing_nonce(self):
@@ -851,7 +853,7 @@ class JWSClientTests(TestCase):
         """
         client = JWSClient(None, None, None)
         with ExpectedException(errors.MissingNonce):
-            client._add_nonce(BadResponse())
+            client._add_nonce(TestResponse())
 
     def test_bad_nonce(self):
         """
@@ -860,7 +862,7 @@ class JWSClientTests(TestCase):
         """
         client = JWSClient(None, None, None)
         with ExpectedException(errors.BadNonce):
-            client._add_nonce(BadResponse(nonce=b'a!_'))
+            client._add_nonce(TestResponse(nonce=b'a!_'))
 
     def test_already_nonce(self):
         """
@@ -929,5 +931,32 @@ class ExtraCoverageTests(TestCase):
         self.assertIn(
             "Not all expected requests were made.  Still expecting:",
             consume_failures[0])
+
+
+class LinkParsingTests(TestCase):
+    """
+    ``_parse_header_links`` parses the links from a response with Link: header
+    fields.  This implementation is ... actually not very good, which is why
+    there aren't many tests.
+
+    ..  seealso: RFC 5988
+    """
+    def test_rfc_example1(self):
+        """
+        The first example from the RFC.
+        """
+        self.assertThat(
+            _parse_header_links(
+                TestResponse(
+                    links=[b'<http://example.com/TheBook/chapter2>; '
+                           b'rel="previous"; '
+                           b'title="previous chapter"'])),
+            Equals({
+                u'previous':
+                {u'rel': u'previous',
+                 u'title': u'previous chapter',
+                 u'url': u'http://example.com/TheBook/chapter2'}
+            }))
+
 
 __all__ = ['ClientTests', 'ExtraCoverageTests']
