@@ -3,10 +3,12 @@ from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
 import attr
-from acme import errors, jose, jws, messages
+from acme import challenges, errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
+from hypothesis import strategies as s
+from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, ContainsDict, Equals, IsInstance,
@@ -27,9 +29,39 @@ from twisted.web import http
 from twisted.web.http_headers import Headers
 
 from txacme.client import (
-    _default_client, Client, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE,
-    JWSClient, ServerError)
+    _default_client, Client, fqdn_identifier, JSON_CONTENT_TYPE,
+    JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
 from txacme.util import generate_private_key
+
+
+def dns_label():
+    """
+    Strategy for generating limited charset DNS labels.
+    """
+    # This is too limited, but whatever
+    return s.text(
+        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
+        min_size=1, max_size=25)
+
+
+def dns_name():
+    """
+    Strategy for generating limited charset DNS names.
+    """
+    return (
+        s.lists(dns_label(), min_size=1, max_size=10)
+        .map(u'.'.join))
+
+
+def urls():
+    """
+    Strategy for generating `~twisted.python.url.URL`s.
+    """
+    return s.builds(
+        URL,
+        scheme=s.just(u'https'),
+        host=dns_name(),
+        path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
 
 
 def failed_with(matcher):
@@ -116,7 +148,7 @@ class ClientFixture(Fixture):
                 StringStubbingResource(self._sequence)),
             data_to_body_producer=_SynchronousProducer)
         self.client = Client(
-            reactor, self._directory, self._key,
+            self._directory, reactor, self._key,
             jws_client=JWSClient(treq_client, self._key, self._alg))
 
 
@@ -560,6 +592,191 @@ class ClientTests(TestCase):
         # We should probably assert some stuff about the treq.HTTPClient, but
         # it's hard without doing awful mock stuff.
 
+    def test_request_challenges(self):
+        """
+        :meth:`~txacme.client.Client.request_challenges` creates a new
+        authorization, and returns the authorization resource with a list of
+        possible challenges to proceed with.
+        """
+        name = u'example.com'
+        identifier_json = {u'type': u'dns',
+                           u'value': name}
+        identifier = messages.Identifier.from_json(identifier_json)
+        challenges = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            ]
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/new-authz',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-authz'),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'new-authz',
+                     u'identifier': identifier_json,
+                     }))]),
+              (http.CREATED,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'location': b'https://example.org/acme/authz/1',
+                b'link': b'<https://example.org/acme/new-cert>;rel="next"',
+                },
+               _json_dumps({
+                   u'status': u'pending',
+                   u'identifier': identifier_json,
+                   u'challenges': challenges,
+                   u'combinations': [[0], [1]],
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.request_challenges(identifier),
+                succeeded(MatchesStructure(
+                    body=MatchesStructure(
+                        identifier=Equals(identifier),
+                        challenges=Equals(
+                            tuple(map(
+                                messages.ChallengeBody.from_json,
+                                challenges))),
+                        combinations=Equals(((0,), (1,))),
+                        status=Equals(messages.STATUS_PENDING)),
+                    new_cert_uri=Equals(
+                        u'https://example.org/acme/new-cert'),
+                )))
+
+    @example(http.CREATED, http.FOUND)
+    @given(s.sampled_from(http.RESPONSES.keys()),
+           s.sampled_from(http.RESPONSES.keys()))
+    def test_expect_response_wrong_code(self, expected, actual):
+        """
+        ``_expect_response`` raises `~acme.errors.ClientError` if the response
+        code does not match the expected code.
+        """
+        assume(expected != actual)
+        response = BadResponse(code=actual)
+        with ExpectedException(errors.ClientError):
+            Client._expect_response(response, expected)
+
+    def test_authorization_missing_link(self):
+        """
+        ``_parse_authorization`` raises `~acme.errors.ClientError` if the
+        ``"next"`` link is missing.
+        """
+        response = BadResponse()
+        with ExpectedException(errors.ClientError, '"next" link missing'):
+            Client._parse_authorization(response)
+
+    def test_authorization_unexpected_identifier(self):
+        """
+        ``_check_authorization`` raises `~acme.errors.UnexpectedUpdate` if the
+        return identifier doesn't match.
+        """
+        with ExpectedException(errors.UnexpectedUpdate):
+            Client._check_authorization(
+                messages.AuthorizationResource(
+                    body=messages.Authorization()),
+                messages.Identifier(
+                    typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
+
+    @example(u'example.com')
+    @given(dns_name())
+    def test_fqdn_identifier(self, name):
+        """
+        `~txacme.client.fqdn_identifier` constructs an
+        `~acme.messages.Identifier` of the right type.
+        """
+        self.assertThat(
+            fqdn_identifier(name),
+            MatchesStructure(
+                typ=Equals(messages.IDENTIFIER_FQDN),
+                value=Equals(name)))
+
+    def test_answer_challenge(self):
+        """
+        `~txacme.client.Client.answer_challenge` responds to a challenge and
+        returns the updated challenge.
+        """
+        key_authorization = u'blahblahblah'
+        uri = u'https://example.org/acme/authz/1/0'
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/authz/1/0',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(uri),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'challenge',
+                     u'type': u'http-01',
+                     u'keyAuthorization': key_authorization,
+                     }))]),
+              (http.OK,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'link': b'<https://example.org/acme/authz/1>;rel="up"',
+                },
+               _json_dumps({
+                   u'uri': uri,
+                   u'type': u'http-01',
+                   u'status': u'processing',
+                   u'token': u'DGyRejmCefe7v4NfDGDKfA',
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.answer_challenge(
+                    messages.ChallengeBody(
+                        uri=uri,
+                        chall=challenges.HTTP01(token=b'blahblah'),
+                        status=messages.STATUS_PENDING),
+                    challenges.HTTP01Response(
+                        key_authorization=key_authorization)),
+                succeeded(MatchesStructure(
+                    body=MatchesStructure(),
+                    authzr_uri=Equals(
+                        u'https://example.org/acme/authz/1'),
+                )))
+
+    def test_challenge_missing_link(self):
+        """
+        ``_parse_challenge`` raises `~acme.errors.ClientError` if the ``"up"``
+        link is missing.
+        """
+        response = BadResponse()
+        with ExpectedException(errors.ClientError, '"up" link missing'):
+            Client._parse_challenge(response)
+
+    @example(URL.fromText(u'https://example.org/'),
+             URL.fromText(u'https://example.com/'))
+    @given(urls(), urls())
+    def test_challenge_unexpected_uri(self, url1, url2):
+        """
+        ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
+        challenge does not have the expected URI.
+        """
+        url1 = url1.asURI().asText()
+        url2 = url2.asURI().asText()
+        assume(url1 != url2)
+        with ExpectedException(errors.UnexpectedUpdate):
+            Client._check_challenge(
+                messages.ChallengeResource(
+                    body=messages.ChallengeBody(chall=None, uri=url1)),
+                messages.ChallengeBody(chall=None, uri=url2))
+
 
 class JWSClientTests(TestCase):
     """
@@ -690,7 +907,7 @@ class ExtraCoverageTests(TestCase):
 
     def test_consume_context_manager_fails_on_remaining_requests(self):
         """
-        If the `consume` context manager is used, if there are any remaining
+        If the ``consume`` context manager is used, if there are any remaining
         expecting requests, the test case will be failed.
         """
         sequence = RequestSequence(

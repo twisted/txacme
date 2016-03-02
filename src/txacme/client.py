@@ -18,7 +18,7 @@ logger = Logger()
 
 # Borrowed from requests, with modifications.
 
-def _parse_header_links(value):
+def _parse_header_links(response):
     """
     Parse the links from a Link: header field.
 
@@ -26,11 +26,12 @@ def _parse_header_links(value):
 
     :param bytes value: The header value.
 
-    :rtype: dict
+    :rtype: `dict`
     :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
     """
+    values = response.headers.getRawHeaders(b'link', [b''])
     links = {}
-    value = value.decode('ascii')
+    value = b','.join(values).decode('ascii')
     replace_chars = u' \'"'
     for val in re.split(u', *<', value):
         try:
@@ -61,11 +62,26 @@ def _default_client(jws_client, reactor, key, alg):
     return jws_client
 
 
+def fqdn_identifier(fqdn):
+    """
+    Construct an identifier from an FQDN.
+
+    Trivial implementation, just saves on typing.
+
+    :param str fqdn: The domain name.
+
+    :return: The identifier.
+    :rtype: `~acme.messages.Identifier`
+    """
+    return messages.Identifier(
+        typ=messages.IDENTIFIER_FQDN, value=fqdn)
+
+
 class Client(object):
     """
     ACME client interface.
     """
-    def __init__(self, reactor, directory, key, jws_client):
+    def __init__(self, directory, reactor, key, jws_client):
         self._client = jws_client
         self.directory = directory
         self._key = key
@@ -81,16 +97,14 @@ class Client(object):
             to construct one.
 
         :return: The constructed client.
-        :rtype: Client
+        :rtype: `Client`
         """
         jws_client = _default_client(jws_client, reactor, key, alg)
         return (
             jws_client.get(url.asText())
             .addCallback(json_content)
             .addCallback(messages.Directory.from_json)
-            .addCallback(
-                lambda directory: cls(
-                    reactor, directory, key, jws_client)))
+            .addCallback(cls, reactor, key, jws_client))
 
     def register(self, new_reg=None):
         """
@@ -100,7 +114,7 @@ class Client(object):
             to use, or ``None`` to construct one.
 
         :return: The registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
@@ -130,7 +144,7 @@ class Client(object):
             update.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         return self.update_registration(
             regr.update(
@@ -148,7 +162,7 @@ class Client(object):
             specified if a :class:`~acme.messages.NewRegistration` is provided.
 
         :return: The updated registration resource.
-        :rtype: ~acme.messages.RegistrationResource
+        :rtype: `~acme.messages.RegistrationResource`
         """
         if uri is None:
             uri = regr.uri
@@ -167,8 +181,7 @@ class Client(object):
         """
         Parse a registration response from the server.
         """
-        link = response.headers.getRawHeaders(b'link', [b''])[0]
-        links = _parse_header_links(link)
+        links = _parse_header_links(response)
         if u'terms-of-service' in links:
             terms_of_service = links[u'terms-of-service'][u'url']
         if u'next' in links:
@@ -206,6 +219,111 @@ class Client(object):
             raise errors.UnexpectedUpdate(regr)
         return regr
 
+    def request_challenges(self, identifier):
+        """
+        Create a new authorization.
+
+        :param ~acme.messages.Identifier identifier: The identifier to
+            authorize.
+
+        :return: The new authorization resource.
+        :rtype: `~acme.messages.AuthorizationResource`
+        """
+        message = messages.NewAuthorization(identifier=identifier)
+        return (
+            self._client.post(
+                self.directory[message], message)
+            .addCallback(self._expect_response, http.CREATED)
+            .addCallback(self._parse_authorization)
+            .addCallback(self._check_authorization, identifier)
+            )
+
+    @classmethod
+    def _expect_response(cls, response, code):
+        """
+        Ensure we got the expected response code.
+        """
+        if response.code != code:
+            raise errors.ClientError(
+                'Expected {!r} response but got {!r}'.format(
+                    code, response.code))
+        return response
+
+    @classmethod
+    def _parse_authorization(cls, response):
+        """
+        Parse an authorization resource.
+        """
+        links = _parse_header_links(response)
+        try:
+            new_cert_uri = links['next']['url']
+        except KeyError:
+            raise errors.ClientError('"next" link missing')
+        location = response.headers.getRawHeaders(b'location')[0]
+        uri = location.decode('ascii')
+        return (
+            response.json()
+            .addCallback(
+                lambda body: messages.AuthorizationResource(
+                    body=messages.Authorization.from_json(body),
+                    uri=uri,
+                    new_cert_uri=new_cert_uri))
+            )
+
+    @classmethod
+    def _check_authorization(cls, auth, identifier):
+        """
+        Check that the authorization we got is the one we expected.
+        """
+        if auth.body.identifier != identifier:
+            raise errors.UnexpectedUpdate(auth)
+        return auth
+
+    def answer_challenge(self, challenge_body, response):
+        """
+        Respond to an authorization challenge.
+
+        :param ~acme.messages.ChallengeBody challenge_body: The challenge being
+            responded to.
+        :param ~acme.challenges.ChallengeResponse response: The response to the
+            challenge.
+
+        :return: The updated challenge resource.
+        :rtype: `~acme.messages.ChallengeResource`
+        """
+        return (
+            self._client.post(challenge_body.uri, response)
+            .addCallback(self._parse_challenge)
+            .addCallback(self._check_challenge, challenge_body)
+            )
+
+    @classmethod
+    def _parse_challenge(cls, response):
+        """
+        Parse a challenge resource.
+        """
+        links = _parse_header_links(response)
+        try:
+            authzr_uri = links['up']['url']
+        except KeyError:
+            raise errors.ClientError('"up" link missing')
+        return (
+            response.json()
+            .addCallback(
+                lambda body: messages.ChallengeResource(
+                    authzr_uri=authzr_uri,
+                    body=messages.ChallengeBody.from_json(body)))
+            )
+
+    @classmethod
+    def _check_challenge(cls, challenge, challenge_body):
+        """
+        Check that the challenge resource we got is the one we expected.
+        """
+        if challenge.uri != challenge_body.uri:
+            raise errors.UnexpectedUpdate(challenge.uri)
+        return challenge
+
 
 JSON_CONTENT_TYPE = b'application/json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
@@ -240,7 +358,7 @@ class JWSClient(object):
 
         self._nonces = set()
 
-    def _wrap_in_jws(self, obj, nonce):
+    def _wrap_in_jws(self, nonce, obj):
         """
         Wrap ``JSONDeSerializable`` object in JWS.
 
@@ -249,7 +367,7 @@ class JWSClient(object):
         :param ~acme.jose.interfaces.JSONDeSerializable obj:
         :param bytes nonce:
 
-        :rtype: bytes
+        :rtype: `bytes`
         :return: JSON-encoded data
         """
         jobj = obj.json_dumps().encode()
@@ -273,7 +391,7 @@ class JWSClient(object):
             the response Content-Type does not match, :exc:`ClientError` is
             raised.
 
-        :raises ServerError: If server response body carries HTTP Problem
+        :raises .ServerError: If server response body carries HTTP Problem
             (draft-ietf-appsawg-http-problem-00).
         :raises ~acme.errors.ClientError: In case of other networking errors.
         """
@@ -330,8 +448,8 @@ class JWSClient(object):
         """
         Send HEAD request without checking the response.
 
-        Note that `_check_response` is not called, as there will be no response
-        body to check.
+        Note that ``_check_response`` is not called, as there will be no
+        response body to check.
 
         :param str url: The URL to make the request to.
         """
@@ -344,7 +462,7 @@ class JWSClient(object):
         :param str method: The HTTP method to use.
         :param str url: The URL to make the request to.
 
-        :raises acme.messages.Error: If server response body carries HTTP
+        :raises txacme.client.ServerError: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
 
@@ -399,7 +517,7 @@ class JWSClient(object):
         :param bytes content_type: The expected content type of the response.
             By default, JSON.
 
-        :raises acme.messages.Error: If server response body carries HTTP
+        :raises txacme.client.ServerError: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
         """
@@ -407,16 +525,14 @@ class JWSClient(object):
         headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
         return (
             self._get_nonce(url)
-            .addCallback(lambda nonce: self._wrap_in_jws(obj, nonce))
+            .addCallback(self._wrap_in_jws, obj)
             .addCallback(
                 lambda data: self._send_request(
                     u'POST', url, data=data, **kwargs))
             .addCallback(self._add_nonce)
-            .addCallback(
-                lambda response:
-                self._check_response(response, content_type=content_type))
+            .addCallback(self._check_response, content_type=content_type)
             )
 
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
-    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER']
+    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier']
