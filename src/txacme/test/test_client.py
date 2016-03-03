@@ -32,36 +32,7 @@ from txacme.client import (
     _default_client, _parse_header_links, Client, fqdn_identifier,
     JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
 from txacme.util import generate_private_key
-
-
-def dns_label():
-    """
-    Strategy for generating limited charset DNS labels.
-    """
-    # This is too limited, but whatever
-    return s.text(
-        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
-        min_size=1, max_size=25)
-
-
-def dns_name():
-    """
-    Strategy for generating limited charset DNS names.
-    """
-    return (
-        s.lists(dns_label(), min_size=1, max_size=10)
-        .map(u'.'.join))
-
-
-def urls():
-    """
-    Strategy for generating `~twisted.python.url.URL`s.
-    """
-    return s.builds(
-        URL,
-        scheme=s.just(u'https'),
-        host=dns_name(),
-        path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
+from txacme.test.strategies import dns_name, urls
 
 
 def failed_with(matcher):
@@ -241,9 +212,14 @@ class TestResponse(object):
 
     @property
     def headers(self):
-        return Headers({b'content-type': [self.content_type],
-                        b'replay-nonce': [self.nonce],
-                        b'link': self.links})
+        h = Headers()
+        if self.content_type is not None:
+            h.setRawHeaders(b'content-type', [self.content_type])
+        if self.nonce is not None:
+            h.setRawHeaders(b'replay-nonce', [self.nonce])
+        if self.links is not None:
+            h.setRawHeaders(b'link', self.links)
+        return h
 
 
 class ClientTests(TestCase):
@@ -959,4 +935,4 @@ class LinkParsingTests(TestCase):
             }))
 
 
-__all__ = ['ClientTests', 'ExtraCoverageTests']
+__all__ = ['ClientTests', 'ExtraCoverageTests', 'LinkParsingTests']
