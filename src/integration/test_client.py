@@ -4,7 +4,7 @@ Integration tests for :mod:`acme.client`.
 from __future__ import print_function
 
 from acme.jose import JWKRSA
-from acme.messages import STATUS_PENDING
+from acme.messages import STATUS_PENDING, STATUS_VALID
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet.endpoints import serverFromString
@@ -31,6 +31,9 @@ class ClientTests(TestCase):
     def test_registration(self):
         key = JWKRSA(key=generate_private_key('rsa'))
         client = yield Client.from_url(reactor, STAGING_DIRECTORY, key=key)
+        # Close idle connections left over
+        self.addCleanup(
+            client._client._treq._agent._pool.closeCachedConnections)
 
         reg = yield client.register()
 
@@ -55,6 +58,7 @@ class ClientTests(TestCase):
             endpoint=serverFromString(reactor, 'tcp:4433'),
             contextFactory=SNIMap(host_map))
         port = yield endpoint.listen(site)
+        self.addCleanup(port.stopListening)
 
         response = challb.response(key)
         responder.start_responding(response.z_domain.decode('ascii'))
@@ -68,8 +72,6 @@ class ClientTests(TestCase):
             yield deferLater(reactor, 5.0, lambda: None)
             auth = yield client.poll(auth)
             print(auth.body.status)
-
-        yield port.stopListening()
-
-        # Close idle connections left over
-        yield client._client._treq._agent._pool.closeCachedConnections()
+        self.assertEqual(
+            auth.body.status, STATUS_VALID,
+            'Unexpected response received: {!r}'.format(auth.body))
