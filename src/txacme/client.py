@@ -250,17 +250,18 @@ class Client(object):
         return response
 
     @classmethod
-    def _parse_authorization(cls, response):
+    def _parse_authorization(cls, response, uri=None):
         """
         Parse an authorization resource.
         """
         links = _parse_header_links(response)
         try:
-            new_cert_uri = links['next']['url']
+            new_cert_uri = links[u'next'][u'url']
         except KeyError:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location')[0]
-        uri = location.decode('ascii')
+        location = response.headers.getRawHeaders(b'location', [None])[0]
+        if location is not None:
+            uri = location.decode('ascii')
         return (
             response.json()
             .addCallback(
@@ -271,13 +272,13 @@ class Client(object):
             )
 
     @classmethod
-    def _check_authorization(cls, auth, identifier):
+    def _check_authorization(cls, authzr, identifier):
         """
         Check that the authorization we got is the one we expected.
         """
-        if auth.body.identifier != identifier:
-            raise errors.UnexpectedUpdate(auth)
-        return auth
+        if authzr.body.identifier != identifier:
+            raise errors.UnexpectedUpdate(authzr)
+        return authzr
 
     def answer_challenge(self, challenge_body, response):
         """
@@ -323,6 +324,16 @@ class Client(object):
         if challenge.uri != challenge_body.uri:
             raise errors.UnexpectedUpdate(challenge.uri)
         return challenge
+
+    def poll(self, authzr):
+        return (
+            self._client.get(authzr.uri)
+            # Spec says we should get 202 while pending, Boulder actually sends
+            # us 200 always, so just don't check.
+            # .addCallback(self._expect_response, http.ACCEPTED)
+            .addCallback(self._parse_authorization, uri=authzr.uri)
+            .addCallback(self._check_authorization, authzr.body.identifier)
+            )
 
 
 JSON_CONTENT_TYPE = b'application/json'

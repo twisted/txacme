@@ -753,6 +753,9 @@ class ClientTests(TestCase):
                     body=messages.ChallengeBody(chall=None, uri=url1)),
                 messages.ChallengeBody(chall=None, uri=url2))
 
+    def test_poll(self):
+        assert False
+
 
 class JWSClientTests(TestCase):
     """
