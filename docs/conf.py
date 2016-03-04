@@ -306,6 +306,8 @@ intersphinx_mapping = {
              (None, 'acme-objects.inv')),
     'twisted': ('https://twisted.readthedocs.org/en/latest/',
                 (None, 'twisted-objects.inv')),
+    'cryptography': ('https://cryptography.io/en/latest/',
+                     (None, 'cryptography-objects.inv')),
     }
 
 nitpick_ignore = [('py:class', 'testtools.testcase.TestCase')]

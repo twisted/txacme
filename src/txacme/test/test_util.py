@@ -1,17 +1,18 @@
-from acme import challenges
-from service_identity.pyopenssl import verify_hostname
 import attr
+from acme import challenges
 from acme.jose import b64encode
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from hypothesis import strategies as s
 from hypothesis import example, given
-from OpenSSL import crypto
+from service_identity.pyopenssl import verify_hostname
 from testtools import ExpectedException, TestCase
 from testtools.matchers import Equals, IsInstance, Not
 
 from txacme.test.test_client import RSA_KEY_512
-from txacme.util import generate_private_key, generate_tls_sni_01_cert
+from txacme.util import (
+    cert_cryptography_to_pyopenssl, generate_private_key,
+    generate_tls_sni_01_cert, key_cryptography_to_pyopenssl)
 
 
 class GeneratePrivateKeyTests(TestCase):
@@ -74,12 +75,13 @@ class GenerateCertTests(TestCase):
         cert, pkey = generate_tls_sni_01_cert(
             server_name, _generate_private_key=lambda key_type: ckey)
 
-        ocert = crypto.load_certificate(
-            crypto.FILETYPE_PEM,
-            cert.public_bytes(serialization.Encoding.PEM))
+        ocert = cert_cryptography_to_pyopenssl(cert)
         self.assertThat(
             ocert.digest('sha256').replace(':', '').decode('hex'),
             Equals(cert.fingerprint(hashes.SHA256())))
+        okey = key_cryptography_to_pyopenssl(pkey)
+        # TODO: Can we assert more here?
+        self.assertThat(okey.bits(), Equals(pkey.key_size))
 
         self.assertThat(
             response.verify_cert(ocert),

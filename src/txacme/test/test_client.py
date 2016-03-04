@@ -212,9 +212,7 @@ class TestResponse(object):
 
     @property
     def headers(self):
-        h = Headers()
-        if self.content_type is not None:
-            h.setRawHeaders(b'content-type', [self.content_type])
+        h = Headers({b'content-type': [self.content_type]})
         if self.nonce is not None:
             h.setRawHeaders(b'replay-nonce', [self.nonce])
         if self.links is not None:

@@ -5,10 +5,11 @@ import uuid
 from datetime import datetime, timedelta
 
 from cryptography import x509
-from cryptography.x509.oid import NameOID
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+from OpenSSL import crypto
 
 
 def generate_private_key(key_type):
@@ -24,7 +25,7 @@ def generate_private_key(key_type):
 
 
 def generate_tls_sni_01_cert(server_name, key_type=u'rsa',
-                             _generate_private_key=generate_private_key):
+                             _generate_private_key=None):
     """
     Generate a certificate/key pair for responding to a tls-sni-01 challenge.
 
@@ -34,7 +35,7 @@ def generate_tls_sni_01_cert(server_name, key_type=u'rsa',
     :rtype: ``Tuple[`~cryptography.x509.Certificate`, PrivateKey]``
     :return: A tuple of the certificate and private key.
     """
-    key = _generate_private_key(key_type)
+    key = (_generate_private_key or generate_private_key)(key_type)
     name = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, u'acme.invalid')])
     cert = (
@@ -56,4 +57,29 @@ def generate_tls_sni_01_cert(server_name, key_type=u'rsa',
     return (cert, key)
 
 
-__all__ = ['generate_private_key', 'generate_tls_sni_01_cert']
+def cert_cryptography_to_pyopenssl(cert):
+    """
+    Convert a `cryptography.x509.Certificate` object to an
+    ``OpenSSL.crypto.X509`` object.
+    """
+    return crypto.load_certificate(
+        crypto.FILETYPE_PEM,
+        cert.public_bytes(serialization.Encoding.PEM))
+
+
+def key_cryptography_to_pyopenssl(key):
+    """
+    Convert a Cryptography private key object to an ``OpenSSL.crypto.PKey``
+    object.
+    """
+    return crypto.load_privatekey(
+        crypto.FILETYPE_PEM,
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()))
+
+
+__all__ = [
+    'generate_private_key', 'generate_tls_sni_01_cert',
+    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl']
