@@ -124,6 +124,16 @@ class Client(object):
             .addErrback(self._maybe_registered)
             )
 
+    @classmethod
+    def _maybe_location(cls, response, uri=None):
+        """
+        Get the Location: if there is one.
+        """
+        location = response.headers.getRawHeaders(b'location', [None])[0]
+        if location is not None:
+            return location.decode('ascii')
+        return uri
+
     def _maybe_registered(self, failure):
         """
         If the registration already exists, we should just load it.
@@ -131,8 +141,7 @@ class Client(object):
         failure.trap(ServerError)
         response = failure.value.response
         if response.code == http.CONFLICT:
-            location = response.headers.getRawHeaders(b'location')[0]
-            uri = location.decode('ascii')
+            uri = self._maybe_location(response)
             return self.update_registration(
                 messages.UpdateRegistration(), uri=uri)
         return failure
@@ -189,18 +198,13 @@ class Client(object):
             new_authzr_uri = links[u'next'][u'url']
         if new_authzr_uri is None:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location', [None])[0]
-        if location is None:
-            location = uri
-        else:
-            location = location.decode('ascii')
         return (
             response.json()
             .addCallback(
                 lambda body:
                 messages.RegistrationResource(
                     body=messages.Registration.from_json(body),
-                    uri=location,
+                    uri=self._maybe_location(response, uri=uri),
                     new_authzr_uri=new_authzr_uri,
                     terms_of_service=terms_of_service))
             )
@@ -260,15 +264,12 @@ class Client(object):
             new_cert_uri = links[u'next'][u'url']
         except KeyError:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location', [None])[0]
-        if location is not None:
-            uri = location.decode('ascii')
         return (
             response.json()
             .addCallback(
                 lambda body: messages.AuthorizationResource(
                     body=messages.Authorization.from_json(body),
-                    uri=uri,
+                    uri=cls._maybe_location(response, uri=uri),
                     new_cert_uri=new_cert_uri))
             )
 

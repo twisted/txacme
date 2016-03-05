@@ -956,6 +956,7 @@ class ExtraCoverageTests(TestCase):
         self.assertThat(
             Nearly(1.0, 2.0),
             AfterPreprocessing(str, Equals('Nearly(1.0, 2.0)')))
+        self.assertThat(2.0, Not(Nearly(1.0)))
 
     def test_unexpected_number_of_request_causes_failure(self):
         """
