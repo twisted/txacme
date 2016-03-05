@@ -380,6 +380,8 @@ class JWSClient(object):
     """
     HTTP client using JWS-signed messages.
     """
+    timeout = 30
+
     def __init__(self, treq_client, key, alg, user_agent=b'txacme'):
         self._treq = treq_client
         self._key = key
@@ -470,6 +472,7 @@ class JWSClient(object):
                      method=method, url=url, args=args, kwargs=kwargs)
         headers = kwargs.setdefault('headers', Headers())
         headers.setRawHeaders(b'user-agent', [self._user_agent])
+        kwargs.setdefault('timeout', self.timeout)
         response = self._treq.request(
             method, url, *args, **kwargs)
         return response
