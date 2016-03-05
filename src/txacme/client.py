@@ -8,13 +8,9 @@ from acme import errors, jose, jws, messages
 from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import inlineCallbacks, returnValue, succeed
-from twisted.logger import Logger
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
-
-
-logger = Logger()
 
 
 # Borrowed from requests, with modifications.
@@ -404,7 +400,6 @@ class JWSClient(object):
         :return: JSON-encoded data
         """
         jobj = obj.json_dumps().encode()
-        logger.debug('Serialized JSON: {jobj}', jobj=jobj)
         return (
             jws.JWS.sign(
                 payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
@@ -428,10 +423,6 @@ class JWSClient(object):
             (draft-ietf-appsawg-http-problem-00).
         :raises ~acme.errors.ClientError: In case of other networking errors.
         """
-        logger.debug('Received response {response} '
-                     '(headers: {response.headers})',
-                     response=response)
-
         response_ct = response.headers.getRawHeaders(
             b'Content-Type', [None])[0]
         try:
@@ -468,9 +459,6 @@ class JWSClient(object):
 
         :return: Deferred firing with the HTTP response.
         """
-        logger.debug('Sending {method} request to {url}. '
-                     'args: {args!r}, kwargs: {kwargs!r}',
-                     method=method, url=url, args=args, kwargs=kwargs)
         headers = kwargs.setdefault('headers', Headers())
         headers.setRawHeaders(b'user-agent', [self._user_agent])
         kwargs.setdefault('timeout', self.timeout)
@@ -522,7 +510,6 @@ class JWSClient(object):
                     nonce.decode('ascii'))
             except jose.DeserializationError as error:
                 raise errors.BadNonce(nonce, error)
-            logger.debug('Storing nonce: {nonce!r}', nonce=decoded_nonce)
             self._nonces.add(decoded_nonce)
             return response
         else:
