@@ -45,11 +45,11 @@ setup(
     install_requires=[
         'Twisted[tls]>=15.5.0',
         'acme>=0.4.0',
+        'attrs',
         'treq>=15.1.0',
         ],
     extras_require={
         'test': [
-            'attrs',
             'fixtures>=1.4.0',
             'hypothesis>=3.0.0,<4.0.0',
             'mock',

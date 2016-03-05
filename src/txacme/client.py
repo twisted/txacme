@@ -2,6 +2,7 @@
 ACME client API (like :mod:`acme.client`) implementation for Twisted.
 """
 import re
+import time
 
 from acme import errors, jose, jws, messages
 from treq import json_content
@@ -123,6 +124,16 @@ class Client(object):
             .addErrback(self._maybe_registered)
             )
 
+    @classmethod
+    def _maybe_location(cls, response, uri=None):
+        """
+        Get the Location: if there is one.
+        """
+        location = response.headers.getRawHeaders(b'location', [None])[0]
+        if location is not None:
+            return location.decode('ascii')
+        return uri
+
     def _maybe_registered(self, failure):
         """
         If the registration already exists, we should just load it.
@@ -130,8 +141,7 @@ class Client(object):
         failure.trap(ServerError)
         response = failure.value.response
         if response.code == http.CONFLICT:
-            location = response.headers.getRawHeaders(b'location')[0]
-            uri = location.decode('ascii')
+            uri = self._maybe_location(response)
             return self.update_registration(
                 messages.UpdateRegistration(), uri=uri)
         return failure
@@ -188,18 +198,13 @@ class Client(object):
             new_authzr_uri = links[u'next'][u'url']
         if new_authzr_uri is None:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location', [None])[0]
-        if location is None:
-            location = uri
-        else:
-            location = location.decode('ascii')
         return (
             response.json()
             .addCallback(
                 lambda body:
                 messages.RegistrationResource(
                     body=messages.Registration.from_json(body),
-                    uri=location,
+                    uri=self._maybe_location(response, uri=uri),
                     new_authzr_uri=new_authzr_uri,
                     terms_of_service=terms_of_service))
             )
@@ -250,34 +255,32 @@ class Client(object):
         return response
 
     @classmethod
-    def _parse_authorization(cls, response):
+    def _parse_authorization(cls, response, uri=None):
         """
         Parse an authorization resource.
         """
         links = _parse_header_links(response)
         try:
-            new_cert_uri = links['next']['url']
+            new_cert_uri = links[u'next'][u'url']
         except KeyError:
             raise errors.ClientError('"next" link missing')
-        location = response.headers.getRawHeaders(b'location')[0]
-        uri = location.decode('ascii')
         return (
             response.json()
             .addCallback(
                 lambda body: messages.AuthorizationResource(
                     body=messages.Authorization.from_json(body),
-                    uri=uri,
+                    uri=cls._maybe_location(response, uri=uri),
                     new_cert_uri=new_cert_uri))
             )
 
     @classmethod
-    def _check_authorization(cls, auth, identifier):
+    def _check_authorization(cls, authzr, identifier):
         """
         Check that the authorization we got is the one we expected.
         """
-        if auth.body.identifier != identifier:
-            raise errors.UnexpectedUpdate(auth)
-        return auth
+        if authzr.body.identifier != identifier:
+            raise errors.UnexpectedUpdate(authzr)
+        return authzr
 
     def answer_challenge(self, challenge_body, response):
         """
@@ -324,6 +327,34 @@ class Client(object):
             raise errors.UnexpectedUpdate(challenge.uri)
         return challenge
 
+    def poll(self, authzr, _now=time.time):
+        """
+        Update an authorization from the server (usually to check its status).
+        """
+        return (
+            self._client.get(authzr.uri)
+            # Spec says we should get 202 while pending, Boulder actually sends
+            # us 200 always, so just don't check.
+            # .addCallback(self._expect_response, http.ACCEPTED)
+            .addCallback(
+                lambda res:
+                self._parse_authorization(res, uri=authzr.uri)
+                .addCallback(self._check_authorization, authzr.body.identifier)
+                .addCallback(
+                    lambda authzr: (authzr, self.retry_after(res, _now=_now)))
+            ))
+
+    @classmethod
+    def retry_after(cls, response, default=5, _now=time.time):
+        """
+        Parse the Retry-After value from a response.
+        """
+        val = response.headers.getRawHeaders(b'retry-after', [default])[0]
+        try:
+            return int(val)
+        except ValueError:
+            return http.stringToDatetime(val) - _now()
+
 
 JSON_CONTENT_TYPE = b'application/json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
@@ -350,6 +381,8 @@ class JWSClient(object):
     """
     HTTP client using JWS-signed messages.
     """
+    timeout = 30
+
     def __init__(self, treq_client, key, alg, user_agent=b'txacme'):
         self._treq = treq_client
         self._key = key
@@ -440,6 +473,7 @@ class JWSClient(object):
                      method=method, url=url, args=args, kwargs=kwargs)
         headers = kwargs.setdefault('headers', Headers())
         headers.setRawHeaders(b'user-agent', [self._user_agent])
+        kwargs.setdefault('timeout', self.timeout)
         response = self._treq.request(
             method, url, *args, **kwargs)
         return response

@@ -1,4 +1,5 @@
 import json
+import time
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
@@ -29,39 +30,10 @@ from twisted.web import http
 from twisted.web.http_headers import Headers
 
 from txacme.client import (
-    _default_client, Client, fqdn_identifier, JSON_CONTENT_TYPE,
-    JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
+    _default_client, _parse_header_links, Client, fqdn_identifier,
+    JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
+from txacme.test.strategies import dns_name, urls
 from txacme.util import generate_private_key
-
-
-def dns_label():
-    """
-    Strategy for generating limited charset DNS labels.
-    """
-    # This is too limited, but whatever
-    return s.text(
-        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
-        min_size=1, max_size=25)
-
-
-def dns_name():
-    """
-    Strategy for generating limited charset DNS names.
-    """
-    return (
-        s.lists(dns_label(), min_size=1, max_size=10)
-        .map(u'.'.join))
-
-
-def urls():
-    """
-    Strategy for generating `~twisted.python.url.URL`s.
-    """
-    return s.builds(
-        URL,
-        scheme=s.just(u'https'),
-        host=dns_name(),
-        path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
 
 
 def failed_with(matcher):
@@ -120,6 +92,22 @@ class Never(object):
     def match(self, value):
         return Mismatch(
             u'Inevitable mismatch on %r' % (value,))
+
+
+class Nearly(object):
+    """Within a certain threshold."""
+    def __init__(self, expected, epsilon=0.001):
+        self.expected = expected
+        self.epsilon = epsilon
+
+    def __str__(self):
+        return 'Nearly(%r, %r)' % (self.expected, self.epsilon)
+
+    def match(self, value):
+        if abs(value - self.expected) > self.epsilon:
+            return Mismatch(
+                u'%r more than %r from %r' % (
+                    value, self.epsilon, self.expected))
 
 
 class ClientFixture(Fixture):
@@ -229,7 +217,7 @@ def on_jws(matcher):
 
 
 @attr.s
-class BadResponse(object):
+class TestResponse(object):
     """
     Test response implementation for various bad response cases.
     """
@@ -237,11 +225,16 @@ class BadResponse(object):
     content_type = attr.ib(default=JSON_CONTENT_TYPE)
     nonce = attr.ib(default=None)
     json = attr.ib(default=lambda: succeed({}))
+    links = attr.ib(default=None)
 
     @property
     def headers(self):
-        return Headers({b'content-type': [self.content_type],
-                        b'replay-nonce': [self.nonce]})
+        h = Headers({b'content-type': [self.content_type]})
+        if self.nonce is not None:
+            h.setRawHeaders(b'replay-nonce', [self.nonce])
+        if self.links is not None:
+            h.setRawHeaders(b'link', self.links)
+        return h
 
 
 class ClientTests(TestCase):
@@ -663,7 +656,7 @@ class ClientTests(TestCase):
         code does not match the expected code.
         """
         assume(expected != actual)
-        response = BadResponse(code=actual)
+        response = TestResponse(code=actual)
         with ExpectedException(errors.ClientError):
             Client._expect_response(response, expected)
 
@@ -672,7 +665,7 @@ class ClientTests(TestCase):
         ``_parse_authorization`` raises `~acme.errors.ClientError` if the
         ``"next"`` link is missing.
         """
-        response = BadResponse()
+        response = TestResponse()
         with ExpectedException(errors.ClientError, '"next" link missing'):
             Client._parse_authorization(response)
 
@@ -756,7 +749,7 @@ class ClientTests(TestCase):
         ``_parse_challenge`` raises `~acme.errors.ClientError` if the ``"up"``
         link is missing.
         """
-        response = BadResponse()
+        response = TestResponse()
         with ExpectedException(errors.ClientError, '"up" link missing'):
             Client._parse_challenge(response)
 
@@ -777,6 +770,86 @@ class ClientTests(TestCase):
                     body=messages.ChallengeBody(chall=None, uri=url1)),
                 messages.ChallengeBody(chall=None, uri=url2))
 
+    @given(name=dns_name(),
+           retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
+           date_string=s.booleans())
+    def test_poll(self, name, retry_after, date_string):
+        """
+        `~txacme.client.Client.poll` retrieves the latest state of an
+        authorization resource, as well as the minimum time to wait before
+        polling the state again.
+        """
+        now = time.time()
+        if retry_after is None:
+            retry_after_encoded = None
+            retry_after = 5
+        elif date_string:
+            retry_after /= 1000.
+            retry_after_encoded = http.datetimeToString(retry_after)
+            retry_after = retry_after - now
+        else:
+            retry_after_encoded = bytes(retry_after)
+        identifier_json = {u'type': u'dns',
+                           u'value': name}
+        identifier = messages.Identifier.from_json(identifier_json)
+        challenges = [
+            {u'type': u'http-01',
+             u'status': u'invalid',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'status': u'pending',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            ]
+        authzr = messages.AuthorizationResource(
+            uri=u'https://example.org/acme/authz/1',
+            body=messages.Authorization(
+                identifier=identifier))
+        response_headers = {
+            b'content-type': JSON_CONTENT_TYPE,
+            b'replay-nonce': jose.b64encode(b'Nonce2'),
+            b'location': b'https://example.org/acme/authz/1',
+            b'link': b'<https://example.org/acme/new-cert>;rel="next"',
+            }
+        if retry_after_encoded is not None:
+            response_headers[b'retry-after'] = retry_after_encoded
+        sequence = RequestSequence(
+            [(MatchesListwise([
+                Equals(b'GET'),
+                Equals(u'https://example.org/acme/authz/1'),
+                Equals({}),
+                Always(),
+                Always()]),
+              (http.OK,
+               response_headers,
+               _json_dumps({
+                   u'status': u'invalid',
+                   u'identifier': identifier_json,
+                   u'challenges': challenges,
+                   u'combinations': [[0], [1]],
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.poll(authzr, _now=lambda: now),
+                succeeded(MatchesListwise([
+                    MatchesStructure(
+                        body=MatchesStructure(
+                            identifier=Equals(identifier),
+                            challenges=Equals(
+                                tuple(map(
+                                    messages.ChallengeBody.from_json,
+                                    challenges))),
+                            combinations=Equals(((0,), (1,))),
+                            status=Equals(messages.STATUS_INVALID)),
+                        new_cert_uri=Equals(
+                            u'https://example.org/acme/new-cert')),
+                    Nearly(retry_after, 1.0),
+                ])))
+
 
 class JWSClientTests(TestCase):
     """
@@ -789,7 +862,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(content_type=b'application/octet-stream')),
+                TestResponse(content_type=b'application/octet-stream')),
             failed_with(IsInstance(errors.ClientError)))
 
     def test_check_invalid_error_type(self):
@@ -799,7 +872,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=b'application/octet-stream')),
             failed_with(IsInstance(errors.ClientError)))
@@ -811,7 +884,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=JSON_ERROR_CONTENT_TYPE)),
             failed_with(IsInstance(errors.ClientError)))
@@ -823,7 +896,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(
+                TestResponse(
                     code=http.FORBIDDEN,
                     content_type=JSON_ERROR_CONTENT_TYPE,
                     json=lambda: succeed({
@@ -841,7 +914,7 @@ class JWSClientTests(TestCase):
         """
         self.assertThat(
             JWSClient._check_response(
-                BadResponse(json=lambda: fail(ValueError()))),
+                TestResponse(json=lambda: fail(ValueError()))),
             failed_with(IsInstance(errors.ClientError)))
 
     def test_missing_nonce(self):
@@ -851,7 +924,7 @@ class JWSClientTests(TestCase):
         """
         client = JWSClient(None, None, None)
         with ExpectedException(errors.MissingNonce):
-            client._add_nonce(BadResponse())
+            client._add_nonce(TestResponse())
 
     def test_bad_nonce(self):
         """
@@ -860,7 +933,7 @@ class JWSClientTests(TestCase):
         """
         client = JWSClient(None, None, None)
         with ExpectedException(errors.BadNonce):
-            client._add_nonce(BadResponse(nonce=b'a!_'))
+            client._add_nonce(TestResponse(nonce=b'a!_'))
 
     def test_already_nonce(self):
         """
@@ -880,6 +953,10 @@ class ExtraCoverageTests(TestCase):
         self.assertThat(Always(), AfterPreprocessing(str, Equals('Always()')))
         self.assertThat(Never(), AfterPreprocessing(str, Equals('Never()')))
         self.assertThat(None, Not(Never()))
+        self.assertThat(
+            Nearly(1.0, 2.0),
+            AfterPreprocessing(str, Equals('Nearly(1.0, 2.0)')))
+        self.assertThat(2.0, Not(Nearly(1.0)))
 
     def test_unexpected_number_of_request_causes_failure(self):
         """
@@ -930,4 +1007,31 @@ class ExtraCoverageTests(TestCase):
             "Not all expected requests were made.  Still expecting:",
             consume_failures[0])
 
-__all__ = ['ClientTests', 'ExtraCoverageTests']
+
+class LinkParsingTests(TestCase):
+    """
+    ``_parse_header_links`` parses the links from a response with Link: header
+    fields.  This implementation is ... actually not very good, which is why
+    there aren't many tests.
+
+    ..  seealso: RFC 5988
+    """
+    def test_rfc_example1(self):
+        """
+        The first example from the RFC.
+        """
+        self.assertThat(
+            _parse_header_links(
+                TestResponse(
+                    links=[b'<http://example.com/TheBook/chapter2>; '
+                           b'rel="previous"; '
+                           b'title="previous chapter"'])),
+            Equals({
+                u'previous':
+                {u'rel': u'previous',
+                 u'title': u'previous chapter',
+                 u'url': u'http://example.com/TheBook/chapter2'}
+            }))
+
+
+__all__ = ['ClientTests', 'ExtraCoverageTests', 'LinkParsingTests']

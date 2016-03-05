@@ -4,11 +4,19 @@ Integration tests for :mod:`acme.client`.
 from __future__ import print_function
 
 from acme.jose import JWKRSA
+from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
+from twisted.internet.endpoints import serverFromString
+from twisted.internet.task import deferLater
 from twisted.python.url import URL
 from twisted.trial.unittest import TestCase
+from twisted.web.resource import Resource
+from twisted.web.server import Site
+from txsni.snimap import SNIMap
+from txsni.tlsendpoint import TLSEndpoint
 
+from txacme.challenges import TLSSNI01Responder
 from txacme.client import Client, fqdn_identifier
 from txacme.util import generate_private_key
 
@@ -23,6 +31,9 @@ class ClientTests(TestCase):
     def test_registration(self):
         key = JWKRSA(key=generate_private_key('rsa'))
         client = yield Client.from_url(reactor, STAGING_DIRECTORY, key=key)
+        # Close idle connections left over
+        self.addCleanup(
+            client._client._treq._agent._pool.closeCachedConnections)
 
         reg = yield client.register()
 
@@ -33,37 +44,34 @@ class ClientTests(TestCase):
         yield client.agree_to_tos(reg2)
 
         auth = yield client.request_challenges(fqdn_identifier(HOST))
-        print(auth)
+        for challbs in auth.body.resolved_combinations:
+            if tuple(challb.typ for challb in challbs) == (u'tls-sni-01',):
+                challb = challbs[0]
+                break
+        else:
+            raise RuntimeError('No supported challenges found!')
 
-        # AuthorizationResource(
-        #     body=Authorization(
-        #         status=Status(pending),
-        #         challenges=(
-        #             ChallengeBody(
-        #                 chall=UnrecognizedChallenge(),
-        #                 status=Status(pending),
-        #                 validated=None,
-        #                 uri=u'https://acme-staging.api.letsencrypt.org/acme/challenge/9j78Tc9U5YJfvSjmYfi1MC4zi7l-r7sAQUSnjYiOuiY/1478888',
-        #                 error=None),
-        #             ChallengeBody(
-        #                 chall=HTTP01(token='B\x1c2\x88\x01\xc1\xc4Fn\x1c\xb1\x9af\xf6\x938\xa6\xd6}a\xd5&\x19\xf1\xd1N1w\xd2\xa5R\x0f'),
-        #                 status=Status(pending),
-        #                 validated=None,
-        #                 uri=u'https://acme-staging.api.letsencrypt.org/acme/challenge/9j78Tc9U5YJfvSjmYfi1MC4zi7l-r7sAQUSnjYiOuiY/1478889',
-        #                 error=None),
-        #             ChallengeBody(
-        #                 chall=TLSSNI01(token='r\x8e\x9aZ\xafC\xe1L\x84\xc0WQMB\xd8:\x01\xa2D\xc1z\xcf\xc7\x1a\x9aM\xd5\xd5c\xfc&\xee'),
-        #                 status=Status(pending),
-        #                 validated=None,
-        #                 uri=u'https://acme-staging.api.letsencrypt.org/acme/challenge/9j78Tc9U5YJfvSjmYfi1MC4zi7l-r7sAQUSnjYiOuiY/1478890',
-        #                 error=None)),
-        #         identifier=Identifier(typ=IdentifierType(dns),
-        #                               value=u'acme-testing.mithrandi.net'),
-        #         expires=datetime.datetime(2016, 3, 7, 20, 4, 17, 775010),
-        #         combinations=((0,), (2,),
-        #                       (1,))),
-        #     new_cert_uri=u'https://acme-staging.api.letsencrypt.org/acme/new-cert',
-        #     uri=u'https://acme-staging.api.letsencrypt.org/acme/authz/9j78Tc9U5YJfvSjmYfi1MC4zi7l-r7sAQUSnjYiOuiY')
+        responder = TLSSNI01Responder()
+        host_map = responder.wrap_host_map({})
+        site = Site(Resource())
+        endpoint = TLSEndpoint(
+            endpoint=serverFromString(reactor, 'tcp:4433'),
+            contextFactory=SNIMap(host_map))
+        port = yield endpoint.listen(site)
+        self.addCleanup(port.stopListening)
 
-        # Close idle connections left over
-        yield client._client._treq._agent._pool.closeCachedConnections()
+        response = challb.response(key)
+        responder.start_responding(response.z_domain.decode('ascii'))
+
+        print(challb.uri)
+        challr = yield client.answer_challenge(challb, response)
+        print(challr.body.status)
+
+        auth, retry_after = yield client.poll(auth)
+        while auth.body.status in {STATUS_PENDING, STATUS_PROCESSING}:
+            yield deferLater(reactor, retry_after, lambda: None)
+            auth, retry_after = yield client.poll(auth)
+            print(auth.body.status)
+        self.assertEqual(
+            auth.body.status, STATUS_VALID,
+            'Unexpected response received: {!r}'.format(auth.body))
