@@ -2,6 +2,7 @@
 ACME client API (like :mod:`acme.client`) implementation for Twisted.
 """
 import re
+import time
 
 from acme import errors, jose, jws, messages
 from treq import json_content
@@ -325,15 +326,33 @@ class Client(object):
             raise errors.UnexpectedUpdate(challenge.uri)
         return challenge
 
-    def poll(self, authzr):
+    def poll(self, authzr, _now=time.time):
+        """
+        Update an authorization from the server (usually to check its status).
+        """
         return (
             self._client.get(authzr.uri)
             # Spec says we should get 202 while pending, Boulder actually sends
             # us 200 always, so just don't check.
             # .addCallback(self._expect_response, http.ACCEPTED)
-            .addCallback(self._parse_authorization, uri=authzr.uri)
-            .addCallback(self._check_authorization, authzr.body.identifier)
-            )
+            .addCallback(
+                lambda res:
+                self._parse_authorization(res, uri=authzr.uri)
+                .addCallback(self._check_authorization, authzr.body.identifier)
+                .addCallback(
+                    lambda authzr: (authzr, self.retry_after(res, _now=_now)))
+            ))
+
+    @classmethod
+    def retry_after(cls, response, default=5, _now=time.time):
+        """
+        Parse the Retry-After value from a response.
+        """
+        val = response.headers.getRawHeaders(b'retry-after', [default])[0]
+        try:
+            return int(val)
+        except ValueError:
+            return http.stringToDatetime(val) - _now()
 
 
 JSON_CONTENT_TYPE = b'application/json'

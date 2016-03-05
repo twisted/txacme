@@ -1,4 +1,5 @@
 import json
+import time
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
@@ -31,8 +32,8 @@ from twisted.web.http_headers import Headers
 from txacme.client import (
     _default_client, _parse_header_links, Client, fqdn_identifier,
     JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
-from txacme.util import generate_private_key
 from txacme.test.strategies import dns_name, urls
+from txacme.util import generate_private_key
 
 
 def failed_with(matcher):
@@ -91,6 +92,22 @@ class Never(object):
     def match(self, value):
         return Mismatch(
             u'Inevitable mismatch on %r' % (value,))
+
+
+class Nearly(object):
+    """Within a certain threshold."""
+    def __init__(self, expected, epsilon=0.001):
+        self.expected = expected
+        self.epsilon = epsilon
+
+    def __str__(self):
+        return 'Nearly(%r, %r)' % (self.expected, self.epsilon)
+
+    def match(self, value):
+        if abs(value - self.expected) > self.epsilon:
+            return Mismatch(
+                u'%r more than %r from %r' % (
+                    value, self.epsilon, self.expected))
 
 
 class ClientFixture(Fixture):
@@ -753,8 +770,85 @@ class ClientTests(TestCase):
                     body=messages.ChallengeBody(chall=None, uri=url1)),
                 messages.ChallengeBody(chall=None, uri=url2))
 
-    def test_poll(self):
-        assert False
+    @given(name=dns_name(),
+           retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
+           date_string=s.booleans())
+    def test_poll(self, name, retry_after, date_string):
+        """
+        `~txacme.client.Client.poll` retrieves the latest state of an
+        authorization resource, as well as the minimum time to wait before
+        polling the state again.
+        """
+        now = time.time()
+        if retry_after is None:
+            retry_after_encoded = None
+            retry_after = 5
+        elif date_string:
+            retry_after /= 1000.
+            retry_after_encoded = http.datetimeToString(retry_after)
+            retry_after = retry_after - now
+        else:
+            retry_after_encoded = bytes(retry_after)
+        identifier_json = {u'type': u'dns',
+                           u'value': name}
+        identifier = messages.Identifier.from_json(identifier_json)
+        challenges = [
+            {u'type': u'http-01',
+             u'status': u'invalid',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'status': u'pending',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            ]
+        authzr = messages.AuthorizationResource(
+            uri=u'https://example.org/acme/authz/1',
+            body=messages.Authorization(
+                identifier=identifier))
+        response_headers = {
+            b'content-type': JSON_CONTENT_TYPE,
+            b'replay-nonce': jose.b64encode(b'Nonce2'),
+            b'location': b'https://example.org/acme/authz/1',
+            b'link': b'<https://example.org/acme/new-cert>;rel="next"',
+            }
+        if retry_after_encoded is not None:
+            response_headers[b'retry-after'] = retry_after_encoded
+        sequence = RequestSequence(
+            [(MatchesListwise([
+                Equals(b'GET'),
+                Equals(u'https://example.org/acme/authz/1'),
+                Equals({}),
+                Always(),
+                Always()]),
+              (http.OK,
+               response_headers,
+               _json_dumps({
+                   u'status': u'invalid',
+                   u'identifier': identifier_json,
+                   u'challenges': challenges,
+                   u'combinations': [[0], [1]],
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.poll(authzr, _now=lambda: now),
+                succeeded(MatchesListwise([
+                    MatchesStructure(
+                        body=MatchesStructure(
+                            identifier=Equals(identifier),
+                            challenges=Equals(
+                                tuple(map(
+                                    messages.ChallengeBody.from_json,
+                                    challenges))),
+                            combinations=Equals(((0,), (1,))),
+                            status=Equals(messages.STATUS_INVALID)),
+                        new_cert_uri=Equals(
+                            u'https://example.org/acme/new-cert')),
+                    Nearly(retry_after, 1.0),
+                ])))
 
 
 class JWSClientTests(TestCase):
@@ -859,6 +953,9 @@ class ExtraCoverageTests(TestCase):
         self.assertThat(Always(), AfterPreprocessing(str, Equals('Always()')))
         self.assertThat(Never(), AfterPreprocessing(str, Equals('Never()')))
         self.assertThat(None, Not(Never()))
+        self.assertThat(
+            Nearly(1.0, 2.0),
+            AfterPreprocessing(str, Equals('Nearly(1.0, 2.0)')))
 
     def test_unexpected_number_of_request_causes_failure(self):
         """

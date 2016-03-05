@@ -4,7 +4,7 @@ Integration tests for :mod:`acme.client`.
 from __future__ import print_function
 
 from acme.jose import JWKRSA
-from acme.messages import STATUS_PENDING, STATUS_VALID
+from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet.endpoints import serverFromString
@@ -67,10 +67,10 @@ class ClientTests(TestCase):
         challr = yield client.answer_challenge(challb, response)
         print(challr.body.status)
 
-        auth = yield client.poll(auth)
-        while auth.body.status == STATUS_PENDING:
-            yield deferLater(reactor, 5.0, lambda: None)
-            auth = yield client.poll(auth)
+        auth, retry_after = yield client.poll(auth)
+        while auth.body.status in {STATUS_PENDING, STATUS_PROCESSING}:
+            yield deferLater(reactor, retry_after, lambda: None)
+            auth, retry_after = yield client.poll(auth)
             print(auth.body.status)
         self.assertEqual(
             auth.body.status, STATUS_VALID,
