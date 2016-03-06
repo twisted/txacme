@@ -3,6 +3,7 @@ Utility functions that may prove useful when writing an ACME client.
 """
 import uuid
 from datetime import datetime, timedelta
+from functools import wraps
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -10,6 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from OpenSSL import crypto
+from twisted.internet.defer import maybeDeferred
 
 
 def generate_private_key(key_type):
@@ -80,6 +82,19 @@ def key_cryptography_to_pyopenssl(key):
             encryption_algorithm=serialization.NoEncryption()))
 
 
+def tap(f):
+    """
+    "Tap" a Deferred callback chain with a function whose return value is
+    ignored.
+    """
+    @wraps(f)
+    def _cb(res, *a, **kw):
+        d = maybeDeferred(f, res, *a, **kw)
+        d.addCallback(lambda ignored: res)
+        return d
+    return _cb
+
+
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
-    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl']
+    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap']
