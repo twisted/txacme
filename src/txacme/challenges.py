@@ -32,7 +32,7 @@ class _MergingMappingProxy(Mapping):
             return self.underlay[key]
 
     def __iter__(self):
-        return iter(set(self.underlay.keys() + self.overlay.keys()))
+        return iter(set(self.underlay.keys()) | set(self.overlay.keys()))
 
     def __len__(self):
         return sum(1 for _ in self)

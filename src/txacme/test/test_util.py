@@ -1,3 +1,5 @@
+from codecs import decode
+
 import attr
 from acme import challenges
 from acme.jose import b64encode
@@ -62,6 +64,7 @@ class GenerateCertTests(TestCase):
     `.generate_tls_sni_01_cert` generates a cert and key suitable for
     responding for the given challenge SAN.
     """
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
     def test_cert_verifies(self, token):
         """
@@ -77,7 +80,7 @@ class GenerateCertTests(TestCase):
 
         ocert = cert_cryptography_to_pyopenssl(cert)
         self.assertThat(
-            ocert.digest('sha256').replace(':', '').decode('hex'),
+            decode(ocert.digest('sha256').replace(b':', b''), 'hex'),
             Equals(cert.fingerprint(hashes.SHA256())))
         okey = key_cryptography_to_pyopenssl(pkey)
         # TODO: Can we assert more here?

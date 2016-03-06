@@ -770,6 +770,8 @@ class ClientTests(TestCase):
                     body=messages.ChallengeBody(chall=None, uri=url1)),
                 messages.ChallengeBody(chall=None, uri=url2))
 
+    @example(name=u'example.com', retry_after=60, date_string=False)
+    @example(name=u'example.org', retry_after=60, date_string=True)
     @given(name=dns_name(),
            retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
            date_string=s.booleans())
@@ -788,7 +790,7 @@ class ClientTests(TestCase):
             retry_after_encoded = http.datetimeToString(retry_after)
             retry_after = retry_after - now
         else:
-            retry_after_encoded = bytes(retry_after)
+            retry_after_encoded = u'{}'.format(retry_after).encode('ascii')
         identifier_json = {u'type': u'dns',
                            u'value': name}
         identifier = messages.Identifier.from_json(identifier_json)
@@ -849,6 +851,9 @@ class ClientTests(TestCase):
                             u'https://example.org/acme/new-cert')),
                     Nearly(retry_after, 1.0),
                 ])))
+
+    def test_poll_until_valid(self):
+        pass
 
 
 class JWSClientTests(TestCase):

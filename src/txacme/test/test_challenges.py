@@ -4,7 +4,7 @@ Tests for `txacme.challenges`.
 from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
-from hypothesis import given
+from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
 
@@ -18,6 +18,7 @@ class ResponderTests(TestCase):
     `.TLSSNI01Responder` is a responder for tls-sni-01 challenges that works
     with txsni.
     """
+    @example(u'example.com')
     @given(dns_name())
     def test_stop_responding_already_stopped(self, server_name):
         """
@@ -27,6 +28,7 @@ class ResponderTests(TestCase):
         responder = TLSSNI01Responder()
         responder.stop_responding(server_name)
 
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
     def test_start_responding(self, token):
         """
@@ -62,6 +64,7 @@ class MergingProxyTests(TestCase):
     """
     `._MergingMappingProxy` merges two mappings together.
     """
+    @example(underlay={}, overlay={}, key=u'foo')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)),
            key=s.text())
@@ -76,6 +79,7 @@ class MergingProxyTests(TestCase):
             overlay=overlay, underlay=underlay)
         self.assertThat(proxy[key], Is(overlay[key]))
 
+    @example(underlay={}, overlay={}, key=u'foo')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)),
            key=s.text())
@@ -90,6 +94,7 @@ class MergingProxyTests(TestCase):
             overlay=overlay, underlay=underlay)
         self.assertThat(proxy[key], Is(underlay[key]))
 
+    @example(underlay={}, overlay={}, key=u'foo')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)),
            key=s.text())
@@ -105,6 +110,8 @@ class MergingProxyTests(TestCase):
         self.assertThat(proxy[key], Not(Is(underlay[key])))
         self.assertThat(proxy[key], Is(overlay[key]))
 
+    @example(underlay={u'foo': object(), u'bar': object()},
+             overlay={u'bar': object(), u'baz': object()})
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)))
     def test_len(self, underlay, overlay):
@@ -115,6 +122,8 @@ class MergingProxyTests(TestCase):
             overlay=overlay, underlay=underlay)
         self.assertThat(len(proxy), Equals(len(list(proxy))))
 
+    @example(underlay={u'foo': object(), u'bar': object()},
+             overlay={u'bar': object(), u'baz': object()})
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)))
     def test_iter(self, underlay, overlay):
@@ -126,6 +135,8 @@ class MergingProxyTests(TestCase):
         keys = sorted(list(proxy))
         self.assertThat(keys, Equals(sorted(list(set(keys)))))
 
+    @example(underlay={u'foo': object()}, overlay={}, key=u'foo')
+    @example(underlay={}, overlay={}, key=u'bar')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
            overlay=s.dictionaries(s.text(), s.builds(object)),
            key=s.text())
