@@ -5,12 +5,21 @@ import re
 import time
 
 from acme import errors, jose, jws, messages
+from eliot.twisted import DeferredContext
 from treq import json_content
 from treq.client import HTTPClient
-from twisted.internet.defer import inlineCallbacks, returnValue, succeed
+from twisted.internet.defer import succeed
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
+
+from txacme.logging import (
+    LOG_ACME_ANSWER_CHALLENGE, LOG_ACME_CONSUME_DIRECTORY,
+    LOG_ACME_CREATE_AUTHORIZATION, LOG_ACME_POLL_AUTHORIZATION,
+    LOG_ACME_REGISTER, LOG_ACME_UPDATE_REGISTRATION, LOG_HTTP_PARSE_LINKS,
+    LOG_JWS_ADD_NONCE, LOG_JWS_CHECK_RESPONSE, LOG_JWS_GET, LOG_JWS_GET_NONCE,
+    LOG_JWS_HEAD, LOG_JWS_POST, LOG_JWS_REQUEST, LOG_JWS_SIGN)
+from txacme.util import tap
 
 
 # Borrowed from requests, with modifications.
@@ -27,25 +36,27 @@ def _parse_header_links(response):
     :return: A dictionary of parsed links, keyed by ``rel`` or ``url``.
     """
     values = response.headers.getRawHeaders(b'link', [b''])
-    links = {}
     value = b','.join(values).decode('ascii')
-    replace_chars = u' \'"'
-    for val in re.split(u', *<', value):
-        try:
-            url, params = val.split(u';', 1)
-        except ValueError:
-            url, params = val, u''
-
-        link = {}
-        link[u'url'] = url.strip(u'<> \'"')
-        for param in params.split(u';'):
+    with LOG_HTTP_PARSE_LINKS(raw_link=value) as action:
+        links = {}
+        replace_chars = u' \'"'
+        for val in re.split(u', *<', value):
             try:
-                key, value = param.split(u'=')
+                url, params = val.split(u';', 1)
             except ValueError:
-                break
-            link[key.strip(replace_chars)] = value.strip(replace_chars)
-        links[link.get(u'rel') or link.get(u'url')] = link
-    return links
+                url, params = val, u''
+
+            link = {}
+            link[u'url'] = url.strip(u'<> \'"')
+            for param in params.split(u';'):
+                try:
+                    key, value = param.split(u'=')
+                except ValueError:
+                    break
+                link[key.strip(replace_chars)] = value.strip(replace_chars)
+            links[link.get(u'rel') or link.get(u'url')] = link
+        action.add_success_fields(parsed_links=links)
+        return links
 
 
 def _default_client(jws_client, reactor, key, alg):
@@ -96,12 +107,18 @@ class Client(object):
         :return: The constructed client.
         :rtype: `Client`
         """
-        jws_client = _default_client(jws_client, reactor, key, alg)
-        return (
-            jws_client.get(url.asText())
-            .addCallback(json_content)
-            .addCallback(messages.Directory.from_json)
-            .addCallback(cls, reactor, key, jws_client))
+        action = LOG_ACME_CONSUME_DIRECTORY(
+            url=url, key_type=key.typ, alg=alg.name)
+        with action.context():
+            jws_client = _default_client(jws_client, reactor, key, alg)
+            return (
+                DeferredContext(jws_client.get(url.asText()))
+                .addCallback(json_content)
+                .addCallback(messages.Directory.from_json)
+                .addCallback(
+                    tap(lambda d: action.add_success_fields(directory=d)))
+                .addCallback(cls, reactor, key, jws_client)
+                .addActionFinish())
 
     def register(self, new_reg=None):
         """
@@ -115,10 +132,16 @@ class Client(object):
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
-        return (
-            self.update_registration(new_reg, uri=self.directory[new_reg])
-            .addErrback(self._maybe_registered)
-            )
+        action = LOG_ACME_REGISTER(registration=new_reg)
+        with action.context():
+            return (
+                DeferredContext(
+                    self.update_registration(
+                        new_reg, uri=self.directory[new_reg]))
+                .addErrback(self._maybe_registered)
+                .addCallback(
+                    tap(lambda r: action.add_success_fields(registration=r)))
+                .addActionFinish())
 
     @classmethod
     def _maybe_location(cls, response, uri=None):
@@ -176,11 +199,15 @@ class Client(object):
             message = messages.UpdateRegistration(**dict(regr.body))
         else:
             message = regr
-        return (
-            self._client.post(uri, message)
-            .addCallback(self._parse_regr_response, uri=uri)
-            .addCallback(self._check_regr, regr)
-            )
+        action = LOG_ACME_UPDATE_REGISTRATION(uri=uri, registration=message)
+        with action.context():
+            return (
+                DeferredContext(self._client.post(uri, message))
+                .addCallback(self._parse_regr_response, uri=uri)
+                .addCallback(self._check_regr, regr)
+                .addCallback(
+                    tap(lambda r: action.add_success_fields(registration=r)))
+                .addActionFinish())
 
     def _parse_regr_response(self, response, uri=None, new_authzr_uri=None,
                              terms_of_service=None):
@@ -230,14 +257,18 @@ class Client(object):
         :return: The new authorization resource.
         :rtype: `~acme.messages.AuthorizationResource`
         """
-        message = messages.NewAuthorization(identifier=identifier)
-        return (
-            self._client.post(
-                self.directory[message], message)
-            .addCallback(self._expect_response, http.CREATED)
-            .addCallback(self._parse_authorization)
-            .addCallback(self._check_authorization, identifier)
-            )
+        action = LOG_ACME_CREATE_AUTHORIZATION(identifier=identifier)
+        with action.context():
+            message = messages.NewAuthorization(identifier=identifier)
+            return (
+                DeferredContext(
+                    self._client.post(self.directory[message], message))
+                .addCallback(self._expect_response, http.CREATED)
+                .addCallback(self._parse_authorization)
+                .addCallback(self._check_authorization, identifier)
+                .addCallback(
+                    tap(lambda a: action.add_success_fields(authorization=a)))
+                .addActionFinish())
 
     @classmethod
     def _expect_response(cls, response, code):
@@ -290,11 +321,18 @@ class Client(object):
         :return: The updated challenge resource.
         :rtype: `~acme.messages.ChallengeResource`
         """
-        return (
-            self._client.post(challenge_body.uri, response)
-            .addCallback(self._parse_challenge)
-            .addCallback(self._check_challenge, challenge_body)
-            )
+        action = LOG_ACME_ANSWER_CHALLENGE(
+            challenge_body=challenge_body, response=response)
+        with action.context():
+            return (
+                DeferredContext(
+                    self._client.post(challenge_body.uri, response))
+                .addCallback(self._parse_challenge)
+                .addCallback(self._check_challenge, challenge_body)
+                .addCallback(
+                    tap(lambda c:
+                        action.add_success_fields(challenge_resource=c)))
+                .addActionFinish())
 
     @classmethod
     def _parse_challenge(cls, response):
@@ -327,18 +365,26 @@ class Client(object):
         """
         Update an authorization from the server (usually to check its status).
         """
-        return (
-            self._client.get(authzr.uri)
-            # Spec says we should get 202 while pending, Boulder actually sends
-            # us 200 always, so just don't check.
-            # .addCallback(self._expect_response, http.ACCEPTED)
-            .addCallback(
-                lambda res:
-                self._parse_authorization(res, uri=authzr.uri)
-                .addCallback(self._check_authorization, authzr.body.identifier)
+        action = LOG_ACME_POLL_AUTHORIZATION(authorization=authzr)
+        with action.context():
+            return (
+                DeferredContext(self._client.get(authzr.uri))
+                # Spec says we should get 202 while pending, Boulder actually
+                # sends us 200 always, so just don't check.
+                # .addCallback(self._expect_response, http.ACCEPTED)
                 .addCallback(
-                    lambda authzr: (authzr, self.retry_after(res, _now=_now)))
-            ))
+                    lambda res:
+                    self._parse_authorization(res, uri=authzr.uri)
+                    .addCallback(
+                        self._check_authorization, authzr.body.identifier)
+                    .addCallback(
+                        lambda authzr:
+                        (authzr, self.retry_after(res, _now=_now)))
+                )
+                .addCallback(tap(
+                    lambda (a, r): action.add_success_fields(
+                        authorization=a, retry_after=r)))
+                .addActionFinish())
 
     @classmethod
     def retry_after(cls, response, default=5, _now=time.time):
@@ -399,14 +445,15 @@ class JWSClient(object):
         :rtype: `bytes`
         :return: JSON-encoded data
         """
-        jobj = obj.json_dumps().encode()
-        return (
-            jws.JWS.sign(
-                payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
-            .json_dumps())
+        with LOG_JWS_SIGN(key_type=self._key.typ, alg=self._alg.name,
+                          nonce=nonce):
+            jobj = obj.json_dumps().encode()
+            return (
+                jws.JWS.sign(
+                    payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
+                .json_dumps())
 
     @classmethod
-    @inlineCallbacks
     def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):
         """
         Check response content and its type.
@@ -423,32 +470,43 @@ class JWSClient(object):
             (draft-ietf-appsawg-http-problem-00).
         :raises ~acme.errors.ClientError: In case of other networking errors.
         """
+        def _got_failure(f):
+            f.trap(ValueError)
+            return None
+
+        def _got_json(jobj):
+            if 400 <= response.code < 600:
+                if response_ct == JSON_ERROR_CONTENT_TYPE and jobj is not None:
+                    try:
+                        raise ServerError(
+                            messages.Error.from_json(jobj), response)
+                    except jose.DeserializationError as error:
+                        # Couldn't deserialize JSON object
+                        raise errors.ClientError((response, error))
+                else:
+                    # response is not JSON object
+                    raise errors.ClientError(response)
+            elif response_ct != content_type:
+                raise errors.ClientError(
+                    'Unexpected response Content-Type: {0!r}'.format(
+                        response_ct))
+            elif content_type == JSON_CONTENT_TYPE and jobj is None:
+                raise errors.ClientError(response)
+            return response
+
         response_ct = response.headers.getRawHeaders(
             b'Content-Type', [None])[0]
-        try:
+        action = LOG_JWS_CHECK_RESPONSE(
+            expected_content_type=content_type,
+            response_content_type=response_ct)
+        with action.context():
             # TODO: response.json() is called twice, once here, and
             # once in _get and _post clients
-            jobj = yield response.json()
-        except ValueError:
-            jobj = None
-
-        if 400 <= response.code < 600:
-            if response_ct == JSON_ERROR_CONTENT_TYPE and jobj is not None:
-                try:
-                    raise ServerError(messages.Error.from_json(jobj), response)
-                except jose.DeserializationError as error:
-                    # Couldn't deserialize JSON object
-                    raise errors.ClientError((response, error))
-            else:
-                # response is not JSON object
-                raise errors.ClientError(response)
-        elif response_ct != content_type:
-            raise errors.ClientError(
-                'Unexpected response Content-Type: {0!r}'.format(response_ct))
-        elif content_type == JSON_CONTENT_TYPE and jobj is None:
-            raise errors.ClientError(response)
-
-        returnValue(response)
+            return (
+                DeferredContext(response.json())
+                .addErrback(_got_failure)
+                .addCallback(_got_json)
+                .addActionFinish())
 
     def _send_request(self, method, url, *args, **kwargs):
         """
@@ -459,12 +517,20 @@ class JWSClient(object):
 
         :return: Deferred firing with the HTTP response.
         """
-        headers = kwargs.setdefault('headers', Headers())
-        headers.setRawHeaders(b'user-agent', [self._user_agent])
-        kwargs.setdefault('timeout', self.timeout)
-        response = self._treq.request(
-            method, url, *args, **kwargs)
-        return response
+        action = LOG_JWS_REQUEST(url=url)
+        with action.context():
+            headers = kwargs.setdefault('headers', Headers())
+            headers.setRawHeaders(b'user-agent', [self._user_agent])
+            kwargs.setdefault('timeout', self.timeout)
+            return (
+                DeferredContext(
+                    self._treq.request(method, url, *args, **kwargs))
+                .addCallback(
+                    tap(lambda r: action.add_success_fields(
+                        code=r.code,
+                        content_type=r.headers.getRawHeaders(
+                            b'content-type', [None])[0])))
+                .addActionFinish())
 
     def head(self, url, *args, **kwargs):
         """
@@ -475,7 +541,10 @@ class JWSClient(object):
 
         :param str url: The URL to make the request to.
         """
-        return self._send_request(u'HEAD', url, *args, **kwargs)
+        with LOG_JWS_HEAD().context():
+            return DeferredContext(
+                self._send_request(u'HEAD', url, *args, **kwargs)
+                ).addActionFinish()
 
     def get(self, url, content_type=JSON_CONTENT_TYPE, **kwargs):
         """
@@ -490,9 +559,11 @@ class JWSClient(object):
 
         :return: Deferred firing with the checked HTTP response.
         """
-        return (
-            self._send_request(u'GET', url, **kwargs)
-            .addCallback(self._check_response, content_type=content_type))
+        with LOG_JWS_GET().context():
+            return (
+                DeferredContext(self._send_request(u'GET', url, **kwargs))
+                .addCallback(self._check_response, content_type=content_type)
+                .addActionFinish())
 
     def _add_nonce(self, response):
         """
@@ -504,29 +575,38 @@ class JWSClient(object):
         """
         nonce = response.headers.getRawHeaders(
             REPLAY_NONCE_HEADER, [None])[0]
-        if nonce is not None:
-            try:
-                decoded_nonce = jws.Header._fields['nonce'].decode(
-                    nonce.decode('ascii'))
-            except jose.DeserializationError as error:
-                raise errors.BadNonce(nonce, error)
-            self._nonces.add(decoded_nonce)
-            return response
-        else:
-            raise errors.MissingNonce(response)
+        with LOG_JWS_ADD_NONCE(raw_nonce=nonce) as action:
+            if nonce is None:
+                raise errors.MissingNonce(response)
+            else:
+                try:
+                    decoded_nonce = jws.Header._fields['nonce'].decode(
+                        nonce.decode('ascii'))
+                    action.add_success_fields(nonce=decoded_nonce)
+                except jose.DeserializationError as error:
+                    raise errors.BadNonce(nonce, error)
+                self._nonces.add(decoded_nonce)
+                return response
 
     def _get_nonce(self, url):
         """
         Get a nonce to use in a request, removing it from the nonces on hand.
         """
+        action = LOG_JWS_GET_NONCE()
         if len(self._nonces) > 0:
-            return succeed(self._nonces.pop())
+            with action:
+                nonce = self._nonces.pop()
+                action.add_success_fields(nonce=nonce)
+                return succeed(nonce)
         else:
-            return (
-                self.head(url)
-                .addCallback(self._add_nonce)
-                .addCallback(lambda _: self._nonces.pop())
-                )
+            with action.context():
+                return (
+                    DeferredContext(self.head(url))
+                    .addCallback(self._add_nonce)
+                    .addCallback(lambda _: self._nonces.pop())
+                    .addCallback(tap(
+                        lambda nonce: action.add_success_fields(nonce=nonce)))
+                    .addActionFinish())
 
     def post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
         """
@@ -542,17 +622,18 @@ class JWSClient(object):
             Problem (draft-ietf-appsawg-http-problem-00).
         :raises acme.errors.ClientError: In case of other protocol errors.
         """
-        headers = kwargs.setdefault('headers', Headers())
-        headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
-        return (
-            self._get_nonce(url)
-            .addCallback(self._wrap_in_jws, obj)
-            .addCallback(
-                lambda data: self._send_request(
-                    u'POST', url, data=data, **kwargs))
-            .addCallback(self._add_nonce)
-            .addCallback(self._check_response, content_type=content_type)
-            )
+        with LOG_JWS_POST().context():
+            headers = kwargs.setdefault('headers', Headers())
+            headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
+            return (
+                DeferredContext(self._get_nonce(url))
+                .addCallback(self._wrap_in_jws, obj)
+                .addCallback(
+                    lambda data: self._send_request(
+                        u'POST', url, data=data, **kwargs))
+                .addCallback(self._add_nonce)
+                .addCallback(self._check_response, content_type=content_type)
+                .addActionFinish())
 
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',

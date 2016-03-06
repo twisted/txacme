@@ -46,6 +46,7 @@ setup(
         'Twisted[tls]>=15.5.0',
         'acme>=0.4.0',
         'attrs',
+        'eliot>=0.8.0',
         'treq>=15.1.0',
         ],
     extras_require={
