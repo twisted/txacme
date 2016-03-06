@@ -852,9 +852,6 @@ class ClientTests(TestCase):
                     Nearly(retry_after, 1.0),
                 ])))
 
-    def test_poll_until_valid(self):
-        pass
-
 
 class JWSClientTests(TestCase):
     """
