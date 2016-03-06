@@ -382,8 +382,8 @@ class Client(object):
                         (authzr, self.retry_after(res, _now=_now)))
                 )
                 .addCallback(tap(
-                    lambda (a, r): action.add_success_fields(
-                        authorization=a, retry_after=r)))
+                    lambda a_r: action.add_success_fields(
+                        authorization=a_r[0], retry_after=a_r[1])))
                 .addActionFinish())
 
     @classmethod
