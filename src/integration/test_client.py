@@ -96,7 +96,8 @@ class ClientTests(TestCase):
                 .addActionFinish())
 
     def _test_poll(self, auth):
-        def repoll((auth, retry_after)):
+        def repoll(result):
+            auth, retry_after = result
             if auth.body.status in {STATUS_PENDING, STATUS_PROCESSING}:
                 return (
                     deferLater(reactor, retry_after, lambda: None)
