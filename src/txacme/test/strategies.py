@@ -11,7 +11,7 @@ def dns_label():
     """
     # This is too limited, but whatever
     return s.text(
-        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
+        u'abcdefghijklmnopqrstuvwxyz0123456789_-',
         min_size=1, max_size=25)
 
 

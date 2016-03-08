@@ -37,3 +37,5 @@ class ITLSSNI01Responder(Interface):
         :param str server_name: The server name to stop responding for respond:
             ie. `u'<hex>.<hex>.acme.invalid'`.
         """
+
+__all__ = ['ITLSSNI01Responder']

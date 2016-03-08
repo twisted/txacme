@@ -5,10 +5,12 @@ import re
 import time
 
 from acme import errors, jose, jws, messages
+from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from eliot.twisted import DeferredContext
 from treq import json_content
 from treq.client import HTTPClient
-from twisted.internet.defer import succeed
+from twisted.internet.defer import succeed, maybeDeferred
+from twisted.internet.task import deferLater
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
@@ -92,7 +94,7 @@ class Client(object):
     def __init__(self, directory, reactor, key, jws_client):
         self._client = jws_client
         self.directory = directory
-        self._key = key
+        self.key = key
 
     @classmethod
     def from_url(cls, reactor, url, key, alg=jose.RS256, jws_client=None):
@@ -105,7 +107,7 @@ class Client(object):
             to construct one.
 
         :return: The constructed client.
-        :rtype: `Client`
+        :rtype: Deferred[`Client`]
         """
         action = LOG_ACME_CONSUME_DIRECTORY(
             url=url, key_type=key.typ, alg=alg.name)
@@ -128,7 +130,7 @@ class Client(object):
             to use, or ``None`` to construct one.
 
         :return: The registration resource.
-        :rtype: `~acme.messages.RegistrationResource`
+        :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
         if new_reg is None:
             new_reg = messages.NewRegistration()
@@ -173,7 +175,7 @@ class Client(object):
             update.
 
         :return: The updated registration resource.
-        :rtype: `~acme.messages.RegistrationResource`
+        :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
         return self.update_registration(
             regr.update(
@@ -191,7 +193,7 @@ class Client(object):
             specified if a :class:`~acme.messages.NewRegistration` is provided.
 
         :return: The updated registration resource.
-        :rtype: `~acme.messages.RegistrationResource`
+        :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
         if uri is None:
             uri = regr.uri
@@ -243,7 +245,7 @@ class Client(object):
                 continue
             if regr.body[k] != v:
                 raise errors.UnexpectedUpdate(regr)
-        if regr.body.key != self._key.public_key():
+        if regr.body.key != self.key.public_key():
             raise errors.UnexpectedUpdate(regr)
         return regr
 
@@ -255,7 +257,7 @@ class Client(object):
             authorize.
 
         :return: The new authorization resource.
-        :rtype: `~acme.messages.AuthorizationResource`
+        :rtype: Deferred[`~acme.messages.AuthorizationResource`]
         """
         action = LOG_ACME_CREATE_AUTHORIZATION(identifier=identifier)
         with action.context():
@@ -319,7 +321,7 @@ class Client(object):
             challenge.
 
         :return: The updated challenge resource.
-        :rtype: `~acme.messages.ChallengeResource`
+        :rtype: Deferred[`~acme.messages.ChallengeResource`]
         """
         action = LOG_ACME_ANSWER_CHALLENGE(
             challenge_body=challenge_body, response=response)
@@ -398,6 +400,92 @@ class Client(object):
             return http.stringToDatetime(val) - _now()
 
 
+def _find_tls_sni_01_challenge(authzr):
+    """
+    Find a challenge combination that consists solely of a tls-sni-01
+    challenge.
+
+    :param ~acme.messages.AuthorizationResource auth: The authorization to
+        examine.
+
+    :raises NoSupportedChallenges: When a suitable challenge combination is
+        not found.
+
+    :rtype: ~acme.messages.ChallengeBody
+    :return: The challenge that was found.
+    """
+    for challbs in authzr.body.resolved_combinations:
+        if [challb.typ for challb in challbs] == [u'tls-sni-01']:
+            return challbs[0]
+    else:
+        raise NoSupportedChallenges(authzr)
+
+
+def answer_tls_sni_01_challenge(client, authzr, responder):
+    """
+    Complete an authorization using a responder
+
+    :param .Client client: The ACME client.
+    :param ~acme.messages.AuthorizationResource auth: The authorization to
+        complete.
+    :param responder: An ``ITLSSNI01Responder`` implementer to use to complete
+        the challenge.
+
+    :return: A deferred firing when the authorization is verified.
+    """
+    challb = _find_tls_sni_01_challenge(authzr)
+    response = challb.response(client.key)
+    return (
+        maybeDeferred(
+            responder.start_responding, response.z_domain.decode('ascii'))
+        .addCallback(lambda _: client.answer_challenge(challb, response))
+        )
+
+
+def poll_until_valid(clock, client, authzr, timeout=300.0):
+    """
+    Poll an authorization until it is in a state other than pending or
+    processing.
+
+    :param clock: The ``IReactorTime`` implementation to use; usually the
+        reactor, when not testing.
+    :param .Client client: The ACME client.
+    :param ~acme.messages.AuthorizationResource auth: The authorization to
+        complete.
+    :param float timeout: Maximum time to poll in seconds, before giving up.
+
+    :raises txacme.client.AuthorizationFailed: if the authorization is no
+        longer in the pending, processing, or valid states.
+    :raises: ``twisted.internet.defer.CancelledError`` if the authorization was
+        still in pending or processing state when the timeout was reached.
+
+    :rtype: Deferred[`~acme.messages.AuthorizationResource`]
+    :return: A deferred firing when the authorization has completed/failed; if
+             the authorization is valid, the authorization resource will be
+             returned.
+    """
+    def repoll(result):
+        authzr, retry_after = result
+        if authzr.body.status in {STATUS_PENDING, STATUS_PROCESSING}:
+            return (
+                deferLater(clock, retry_after, lambda: None)
+                .addCallback(lambda _: client.poll(authzr))
+                .addCallback(repoll)
+                )
+        if authzr.body.status != STATUS_VALID:
+            raise AuthorizationFailed(authzr)
+        return authzr
+
+    def cancel_timeout(result):
+        if timeout_call.active():
+            timeout_call.cancel()
+        return result
+    d = client.poll(authzr).addCallback(repoll)
+    timeout_call = clock.callLater(timeout, d.cancel)
+    d.addBoth(cancel_timeout)
+    return d
+
+
 JSON_CONTENT_TYPE = b'application/json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
 REPLAY_NONCE_HEADER = b'Replay-Nonce'
@@ -417,6 +505,32 @@ class ServerError(Exception):
 
     def __repr__(self):
         return 'ServerError({!r})'.format(self.message)
+
+
+class AuthorizationFailed(Exception):
+    """
+    An attempt was made to complete an authorization, but it failed.
+    """
+    def __init__(self, authzr):
+        self.status = authzr.body.status
+        self.authzr = authzr
+        self.errors = [
+            challb.error
+            for challb in authzr.body.challenges
+            if challb.error is not None]
+
+    def __repr__(self):
+        return (
+            'AuthorizationFailed(<'
+            '{0.status!r} '
+            '{0.authzr.body.identifier!r} '
+            '{0.errors!r}>)'.format(self))
+
+
+class NoSupportedChallenges(Exception):
+    """
+    No supported challenges were found in an authorization.
+    """
 
 
 class JWSClient(object):
@@ -637,4 +751,6 @@ class JWSClient(object):
 
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
-    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier']
+    'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
+    'answer_tls_sni_01_challenge', 'poll_until_valid', 'NoSupportedChallenges',
+    'AuthorizationFailed']

@@ -12,7 +12,7 @@ from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, ContainsDict, Equals, IsInstance,
+    AfterPreprocessing, Contains, ContainsDict, Equals, IsInstance,
     MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
     Mismatch, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
@@ -22,17 +22,22 @@ from treq.testing import (
     _SynchronousProducer, HasHeaders, RequestTraversalAgent,
     StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import fail, succeed
+from twisted.internet.defer import CancelledError, fail, succeed
+from twisted.internet.task import Clock
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http
 from twisted.web.http_headers import Headers
+from zope.interface import implementer
 
 from txacme.client import (
-    _default_client, _parse_header_links, Client, fqdn_identifier,
-    JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
-from txacme.test.strategies import dns_name, urls
+    _default_client, _find_tls_sni_01_challenge, _parse_header_links,
+    answer_tls_sni_01_challenge, AuthorizationFailed, Client, fqdn_identifier,
+    JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient,
+    NoSupportedChallenges, poll_until_valid, ServerError)
+from txacme.interfaces import ITLSSNI01Responder
+from txacme.test import strategies as ts
 from txacme.util import generate_private_key
 
 
@@ -216,6 +221,7 @@ def on_jws(matcher):
                     on_json(matcher)))))
 
 
+@implementer(ITLSSNI01Responder)
 @attr.s
 class TestResponse(object):
     """
@@ -235,6 +241,20 @@ class TestResponse(object):
         if self.links is not None:
             h.setRawHeaders(b'link', self.links)
         return h
+
+
+@attr.s
+class RecordingResponder(object):
+    names = attr.ib()
+
+    def start_responding(self, server_name):
+        self.names.add(server_name)
+
+    def stop_responding(self, server_name):
+        try:
+            self.names.remove(server_name)
+        except KeyError:
+            pass
 
 
 class ClientTests(TestCase):
@@ -682,7 +702,7 @@ class ClientTests(TestCase):
                     typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
 
     @example(u'example.com')
-    @given(dns_name())
+    @given(ts.dns_name())
     def test_fqdn_identifier(self, name):
         """
         `~txacme.client.fqdn_identifier` constructs an
@@ -755,7 +775,7 @@ class ClientTests(TestCase):
 
     @example(URL.fromText(u'https://example.org/'),
              URL.fromText(u'https://example.com/'))
-    @given(urls(), urls())
+    @given(ts.urls(), ts.urls())
     def test_challenge_unexpected_uri(self, url1, url2):
         """
         ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
@@ -772,7 +792,7 @@ class ClientTests(TestCase):
 
     @example(name=u'example.com', retry_after=60, date_string=False)
     @example(name=u'example.org', retry_after=60, date_string=True)
-    @given(name=dns_name(),
+    @given(name=ts.dns_name(),
            retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
            date_string=s.booleans())
     def test_poll(self, name, retry_after, date_string):
@@ -851,6 +871,291 @@ class ClientTests(TestCase):
                             u'https://example.org/acme/new-cert')),
                     Nearly(retry_after, 1.0),
                 ])))
+
+    def test_tls_sni_01_no_singleton(self):
+        """
+        If a suitable singleton challenge is not found,
+        `.NoSupportedChallenges` is raised.
+        """
+        challs = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            {u'type': u'tls-sni-01',
+             u'uri': u'https://example.org/acme/authz/1/2',
+             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+            ]
+        combinations = ((0, 2), (1, 2))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=list(map(
+                    messages.ChallengeBody.from_json,
+                    challs)),
+                combinations=combinations))
+        with ExpectedException(NoSupportedChallenges):
+            _find_tls_sni_01_challenge(authzr)
+
+    def test_no_tls_sni_01(self):
+        """
+        If no tls-sni-01 challenges are available, `.NoSupportedChallenges` is
+        raised.
+        """
+        challs = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            {u'type': u'tls-sni-01',
+             u'uri': u'https://example.org/acme/authz/1/2',
+             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+            ]
+        combinations = ((0,), (1,))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=list(map(
+                    messages.ChallengeBody.from_json,
+                    challs)),
+                combinations=combinations))
+        with ExpectedException(NoSupportedChallenges):
+            _find_tls_sni_01_challenge(authzr)
+
+    def test_only_tls_sni_01(self):
+        """
+        If a singleton tls-sni-01 challenge is available, it is returned.
+        """
+        challs = list(map(
+            messages.ChallengeBody.from_json,
+            [{u'type': u'http-01',
+              u'uri': u'https://example.org/acme/authz/1/0',
+              u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+             {u'type': u'dns',
+              u'uri': u'https://example.org/acme/authz/1/1',
+              u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+             {u'type': u'tls-sni-01',
+              u'uri': u'https://example.org/acme/authz/1/2',
+              u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+             ]))
+        combinations = ((0,), (1,), (2,))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=challs,
+                combinations=combinations))
+        self.assertThat(
+            _find_tls_sni_01_challenge(authzr),
+            MatchesAll(
+                IsInstance(messages.ChallengeBody),
+                MatchesStructure(
+                    chall=IsInstance(challenges.TLSSNI01))))
+
+    def test_answer_tls_sni_01_challenge(self):
+        """
+        The challenge hostname is found in the responder after invoking
+        `.answer_tls_sni_01_challenge`.
+        """
+        names = set()
+        responder = RecordingResponder(names)
+        uri = u'https://example.org/acme/authz/1/1'
+        key_authorization = (
+            u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
+            u'QF6lXqTKx4OOF7ECC4Jf1F080BGhHQbe0')
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri,
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending'})
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=[challb],
+                combinations=[[0]]))
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/authz/1/1',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(uri),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'challenge',
+                     u'type': u'tls-sni-01',
+                     u'keyAuthorization': key_authorization,
+                     }))]),
+              (http.OK,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'link': b'<https://example.org/acme/authz/1>;rel="up"',
+                },
+               _json_dumps({
+                   u'uri': uri,
+                   u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+                   u'type': u'tls-sni-01',
+                   u'status': u'processing',
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                answer_tls_sni_01_challenge(client, authzr, responder),
+                succeeded(Always()))
+            self.assertThat(
+                names,
+                Contains(
+                    u'7320864740220ae7dee74baacba7a3ec.'
+                    u'f79e3a00bad30df0a7fdeaebe0944336.acme.invalid'))
+
+    def _make_poll_response(self, uri, identifier_json):
+        """
+        Return a factory for a poll response.
+        """
+        def rr(status, error=None):
+            chall = {
+                u'type': u'tls-sni-01',
+                u'status': status,
+                u'uri': uri + u'/0',
+                u'token': u'IlirfxKKXAsHtmzK29Pj8A'}
+            if error is not None:
+                chall[u'error'] = error
+            return (
+                MatchesListwise([
+                    Equals(b'GET'),
+                    Equals(uri),
+                    Equals({}),
+                    Always(),
+                    Always()]),
+                (http.ACCEPTED,
+                 {b'content-type': JSON_CONTENT_TYPE,
+                  b'replay-nonce': jose.b64encode(b'nonce2'),
+                  b'location': uri.encode('ascii'),
+                  b'link': b'<https://example.org/acme/new-cert>;rel="next"'},
+                 _json_dumps({
+                     u'status': status,
+                     u'identifier': identifier_json,
+                     u'challenges': [chall],
+                     u'combinations': [[0]],
+                 })))
+        return rr
+
+    def test_poll_timeout(self):
+        """
+        If the timeout is exceeded during polling, `.poll_until_valid` will
+        fail with ``CancelledError``.
+        """
+        identifier_json = {u'type': u'dns', u'value': u'example.com'}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'pending'),
+             rr(u'pending'),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending'})
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5, 5])
+            self.assertThat(
+                d,
+                failed_with(IsInstance(CancelledError)))
+
+    def test_poll_invalid(self):
+        """
+        If the authorization enters an invalid state while polling,
+        `.poll_until_valid` will fail with `.AuthorizationFailed`.
+        """
+        identifier_json = {u'type': u'dns', u'value': u'example.com'}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'invalid', {
+                 u'type': u'urn:acme:error:connection',
+                 u'detail': u'Failed to connect'}),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending',
+            })
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5])
+            self.assertThat(
+                d,
+                failed_with(MatchesAll(
+                    IsInstance(AuthorizationFailed),
+                    MatchesStructure(
+                        status=Equals(messages.STATUS_INVALID),
+                        errors=Equals([
+                            messages.Error(
+                                typ=u'urn:acme:error:connection',
+                                detail=u'Failed to connect',
+                                title=None)])),
+                    AfterPreprocessing(
+                        repr,
+                        StartsWith(u'AuthorizationFailed(<Status(invalid)')))))
+
+    def test_poll_valid(self):
+        """
+        If the authorization enters a valid state while polling,
+        `.poll_until_valid` will fire with the updated authorization.
+        """
+        identifier_json = {u'type': u'dns', u'value': u'example.com'}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'valid'),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending',
+            })
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5])
+            self.assertThat(
+                d,
+                succeeded(IsInstance(messages.AuthorizationResource)))
 
 
 class JWSClientTests(TestCase):
