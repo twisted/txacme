@@ -1260,7 +1260,7 @@ class ClientTests(TestCase):
         cert = messages.CertificateResource(
             uri=u'http://example.com/',
             cert_chain_uri=cert_urls[0])
-        urls = zip(cert_urls, cert_urls[1:] + [None])
+        urls = list(zip(cert_urls, cert_urls[1:] + [None]))
         sequence = self._make_cert_sequence(urls)
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
@@ -1286,7 +1286,8 @@ class ClientTests(TestCase):
         cert = messages.CertificateResource(
             uri=u'http://example.com/',
             cert_chain_uri=cert_urls[0])
-        sequence = self._make_cert_sequence(zip(cert_urls, cert_urls[1:])[:10])
+        sequence = self._make_cert_sequence(
+            list(zip(cert_urls, cert_urls[1:]))[:10])
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
