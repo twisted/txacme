@@ -1,25 +1,19 @@
 from codecs import decode
-from functools import partial
 
 import attr
 from acme import challenges
 from acme.jose import b64encode
 from acme.jose.errors import DeserializationError
-from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import ExtensionOID
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
-from service_identity._common import (
-    DNS_ID, DNSPattern, verify_service_identity)
-from service_identity.exceptions import VerificationError
 from service_identity.pyopenssl import verify_hostname
 from testtools import ExpectedException, TestCase
-from testtools.matchers import (
-    Equals, IsInstance, MatchesAll, MatchesPredicate, Not)
+from testtools.matchers import Equals, IsInstance, MatchesAll, Not
 
 from txacme.test import strategies as ts
+from txacme.test.matchers import ValidForName
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
     cert_cryptography_to_pyopenssl, csr_for_names, decode_csr, encode_csr,
@@ -88,6 +82,8 @@ class GenerateCertTests(TestCase):
         cert, pkey = generate_tls_sni_01_cert(
             server_name, _generate_private_key=lambda key_type: ckey)
 
+        self.assertThat(cert, ValidForName(server_name))
+
         ocert = cert_cryptography_to_pyopenssl(cert)
         self.assertThat(
             decode(ocert.digest('sha256').replace(b':', b''), 'hex'),
@@ -143,35 +139,17 @@ class CSRTests(TestCase):
         """
         assume(len(names[0]) <= 64)
 
-        def _verify(name, csr):
-            # This is really terrible. Probably can be better after
-            # pyca/service_identity#14 is resolved.
-            csr_ids = [
-                DNSPattern(csr_name.encode('utf-8'))
-                for csr_name
-                in (
-                    csr.extensions
-                    .get_extension_for_oid(
-                        ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-                    .value
-                    .get_values_for_type(x509.DNSName)
-                )]
-            ids = [DNS_ID(name)]
-            try:
-                verify_service_identity(
-                    cert_patterns=csr_ids, obligatory_ids=ids, optional_ids=[])
-            except VerificationError:
-                return False
-            else:
-                return True
-
         self.assertThat(
             csr_for_names(names, key),
-            MatchesAll(*[
-                MatchesPredicate(
-                    partial(_verify, name),
-                    '%r not valid for {!r}'.format(name))
-                for name in names]))
+            MatchesAll(*[ValidForName(name) for name in names]))
+
+    def common_name_too_long(self):
+        """
+        If the first name provided is too long, `~txacme.util.csr_for_names`
+        raises `ValueError`.
+        """
+        with ExpectedException(ValueError):
+            csr_for_names([u'a' * 65])
 
 
 __all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']
