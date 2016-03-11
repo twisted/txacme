@@ -116,10 +116,10 @@ class CSRTests(TestCase):
     def test_decode_garbage(self):
         """
         If decoding fails, `~txacme.util.decode_csr` raises
-        `~acme.errors.DeserializationError`.
+        `~acme.jose.errors.DeserializationError`.
         """
         with ExpectedException(DeserializationError):
-            decode_csr(b'blah blah not a valid CSR')
+            decode_csr(u'blah blah not a valid CSR')
 
     def test_empty_names_invalid(self):
         """

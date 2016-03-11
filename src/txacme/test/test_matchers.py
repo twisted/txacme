@@ -23,6 +23,7 @@ class ValidForNameTests(TestMatchersInterface, TestCase):
         ]
 
     str_examples = [
-        ("ValidForName(u'example.com')", ValidForName(u'example.com')),
+        ('ValidForName({!r})'.format(u'example.com'),
+         ValidForName(u'example.com')),
         ]
     describe_examples = []
