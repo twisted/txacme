@@ -103,8 +103,10 @@ class GenerateCertTests(TestCase):
 
 class CSRTests(TestCase):
     """
-    `encode_csr` and `decode_csr` serialize CSRs in JOSE Base64 DER encoding.
+    `~txacme.util.encode_csr` and `~txacme.util.decode_csr` serialize CSRs in
+    JOSE Base64 DER encoding.
     """
+    @example(names=[u'example.com', u'example.org'])
     @given(names=s.lists(ts.dns_names(), min_size=1))
     def test_roundtrip(self, names):
         """
@@ -116,17 +118,19 @@ class CSRTests(TestCase):
 
     def test_empty_names_invalid(self):
         """
-        `csr_for_names` raises `ValueError` if given an empty list of names.
+        `~txacme.util.csr_for_names` raises `ValueError` if given an empty list
+        of names.
         """
         with ExpectedException(ValueError):
             csr_for_names([], RSA_KEY_512_RAW)
 
+    @example(names=[u'example.com', u'example.org'], key=RSA_KEY_512_RAW)
     @given(names=s.lists(ts.dns_names(), min_size=1),
            key=s.just(RSA_KEY_512_RAW))
     def test_valid_for_names(self, names, key):
         """
-        `csr_for_names` returns a CSR that is actually valid for the given
-        names.
+        `~txacme.util.csr_for_names` returns a CSR that is actually valid for
+        the given names.
         """
         assume(len(names[0]) <= 64)
 
@@ -157,7 +161,7 @@ class CSRTests(TestCase):
             MatchesAll(*[
                 MatchesPredicate(
                     partial(_verify, name),
-                    'not valid for {!r}'.format(name))
+                    '%r not valid for {!r}'.format(name))
                 for name in names]))
 
 

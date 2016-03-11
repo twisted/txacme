@@ -101,7 +101,8 @@ def encode_csr(csr):
     Encode CSR as JOSE Base-64 DER.
 
     :param cryptography.x509.CertificateSigningRequest csr: The CSR.
-    :rtype: unicode
+
+    :rtype: str
     """
     return jose.encode_b64jose(csr.public_bytes(serialization.Encoding.DER))
 
@@ -110,8 +111,9 @@ def decode_csr(b64der):
     """
     Decode JOSE Base-64 DER-encoded CSR.
 
-    :param unicode b64der: The encoded CSR.
-    :rtype: `cryptography.x509.CertificateSigningRequest
+    :param str b64der: The encoded CSR.
+
+    :rtype: `cryptography.x509.CertificateSigningRequest`
     :return: The decoded CSR.
     """
     try:
@@ -145,7 +147,7 @@ def csr_for_names(names, key):
         .subject_name(x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, names[0][:64])]))
         .add_extension(
-            x509.SubjectAlternativeName(map(x509.DNSName, names)),
+            x509.SubjectAlternativeName(list(map(x509.DNSName, names))),
             critical=False)
         .sign(key, hashes.SHA256(), default_backend()))
 

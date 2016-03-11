@@ -222,7 +222,7 @@ def on_jws(matcher):
             jws.JWS.from_json,
             MatchesAll(
                 MatchesPredicate(
-                    methodcaller('verify'), 'JWS message does not verify'),
+                    methodcaller('verify'), '%r does not verify'),
                 AfterPreprocessing(
                     attrgetter('payload'),
                     on_json(matcher)))))
@@ -1214,7 +1214,7 @@ class ClientTests(TestCase):
 
     def test_fetch_chain_empty(self):
         """
-        If a certificate has no issuer link, `Client.fetch_chain` returns an
+        If a certificate has no issuer link, `.Client.fetch_chain` returns an
         empty chain.
         """
         cert = messages.CertificateResource(cert_chain_uri=None)
