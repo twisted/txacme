@@ -656,7 +656,8 @@ class JWSClient(object):
             return (
                 jws.JWS.sign(
                     payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
-                .json_dumps())
+                .json_dumps()
+                .encode())
 
     @classmethod
     def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):

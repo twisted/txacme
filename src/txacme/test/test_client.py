@@ -211,6 +211,7 @@ class RequestSequence(treq_RequestSequence):
 
 def on_json(matcher):
     def _loads(s):
+        assert isinstance(s, bytes)
         s = s.decode('utf-8')
         return json.loads(s)
     return AfterPreprocessing(_loads, matcher)

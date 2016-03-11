@@ -4,6 +4,7 @@ Integration tests for :mod:`acme.client`.
 from __future__ import print_function
 
 from functools import partial
+from os import getenv
 
 from acme.jose import JWKRSA
 from cryptography.hazmat.primitives import serialization
@@ -11,6 +12,7 @@ from eliot import start_action
 from eliot.twisted import DeferredContext
 from twisted.internet import reactor
 from twisted.internet.endpoints import serverFromString
+from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
 from twisted.python.url import URL
 from twisted.trial.unittest import TestCase
@@ -31,16 +33,15 @@ STAGING_DIRECTORY = URL.fromText(
 HOST = u'acme-testing.mithrandi.net'
 
 
-class ClientTests(TestCase):
-    def _cleanup_client(self):
-        return self.client._client._treq._agent._pool.closeCachedConnections()
-
+class ClientTestsMixin(object):
+    """
+    Integration tests for the ACME client.
+    """
     def _test_create_client(self):
         with start_action(action_type=u'integration:create_client').context():
             self.key = JWKRSA(key=generate_private_key('rsa'))
             return (
-                DeferredContext(
-                    Client.from_url(reactor, STAGING_DIRECTORY, key=self.key))
+                DeferredContext(self._create_client(self.key))
                 .addActionFinish())
 
     def _test_register(self):
@@ -70,7 +71,7 @@ class ClientTests(TestCase):
             host_map = responder.wrap_host_map({})
             site = Site(Resource())
             endpoint = TLSEndpoint(
-                endpoint=serverFromString(reactor, 'tcp:4433'),
+                endpoint=serverFromString(reactor, self.ENDPOINT),
                 contextFactory=SNIMap(host_map))
             return (
                 DeferredContext(endpoint.listen(site))
@@ -125,7 +126,6 @@ class ClientTests(TestCase):
         return (
             DeferredContext(self._test_create_client())
             .addCallback(partial(setattr, self, 'client'))
-            .addCallback(lambda _: self.addCleanup(self._cleanup_client))
             .addCallback(lambda _: self._test_register())
             .addCallback(tap(
                 lambda reg1:
@@ -133,12 +133,12 @@ class ClientTests(TestCase):
                 .addCallback(lambda reg2: self.assertEqual(reg1, reg2))))
             .addCallback(self._test_agree_to_tos)
             .addCallback(
-                lambda _: self._test_request_challenges(HOST))
+                lambda _: self._test_request_challenges(self.HOST))
             .addCallback(partial(setattr, self, 'authzr'))
             .addCallback(lambda _: self._create_responder())
             .addCallback(self._test_answer_challenge)
             .addCallback(lambda _: self._test_poll(self.authzr))
-            .addCallback(lambda _: self._test_issue(HOST))
+            .addCallback(lambda _: self._test_issue(self.HOST))
             .addCallback(self._test_chain)
             .addActionFinish())
 
@@ -146,3 +146,44 @@ class ClientTests(TestCase):
         action = start_action(action_type=u'integration')
         with action.context():
             return self._test_registration()
+
+
+def _getenv(name, default=None):
+    """
+    Sigh.
+    """
+    if not _PY3:
+        name = name.encode('utf-8')
+    value = getenv(name)
+    if value is None:
+        return default
+    if not _PY3:
+        value = value.decode('utf-8')
+    return value
+
+
+class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
+    """
+    Tests using the real ACME client against the Let's Encrypt staging
+    environment.
+
+    You must set $ACME_HOST to a hostname that will, when connected to on port
+    443, reach a listening socket opened by the tests on $ACME_ENDPOINT.
+    """
+    HOST = _getenv(u'ACME_HOST')
+    ENDPOINT = _getenv(u'ACME_ENDPOINT', u'tcp:443')
+    if not _PY3:
+        ENDPOINT = ENDPOINT.encode('utf-8')
+
+    if HOST is None:
+        skip = 'Must provide $ACME_HOST'
+
+    def _create_client(self, key):
+        return (
+            Client.from_url(reactor, STAGING_DIRECTORY, key=key)
+            .addCallback(tap(
+                lambda client: self.addCleanup(
+                    client._client._treq._agent._pool.closeCachedConnections)))
+            )
+
+__all__ = ['LetsEncryptStagingTests']

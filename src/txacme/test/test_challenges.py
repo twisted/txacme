@@ -47,13 +47,13 @@ class ResponderTests(TestCase):
         self.assertThat(wrapped_host_map, Not(Contains(server_name)))
         responder.start_responding(server_name)
         self.assertThat(
-            wrapped_host_map.get(server_name).certificate,
+            wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
         # Starting twice before stopping doesn't break things
         responder.start_responding(server_name)
         self.assertThat(
-            wrapped_host_map.get(server_name).certificate,
+            wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
         responder.stop_responding(server_name)

@@ -69,6 +69,7 @@ class TLSSNI01Responder(object):
         """
         cert, pkey = generate_tls_sni_01_cert(
             server_name, _generate_private_key=self._generate_private_key)
+        server_name = server_name.encode('utf-8')
         self._challenge_options[server_name] = CertificateOptions(
             certificate=cert_cryptography_to_pyopenssl(cert),
             privateKey=key_cryptography_to_pyopenssl(pkey))
