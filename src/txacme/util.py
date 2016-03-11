@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
+from acme import errors, jose
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -95,6 +96,61 @@ def tap(f):
     return _cb
 
 
+def encode_csr(csr):
+    """
+    Encode CSR as JOSE Base-64 DER.
+
+    :param cryptography.x509.CertificateSigningRequest csr: The CSR.
+    :rtype: unicode
+    """
+    return jose.encode_b64jose(csr.public_bytes(serialization.Encoding.DER))
+
+
+def decode_csr(b64der):
+    """
+    Decode JOSE Base-64 DER-encoded CSR.
+
+    :param unicode b64der: The encoded CSR.
+    :rtype: `cryptography.x509.CertificateSigningRequest
+    :return: The decoded CSR.
+    """
+    try:
+        return x509.load_der_x509_csr(
+            jose.decode_b64jose(b64der), default_backend())
+    except ValueError as error:
+        raise errors.DeserializationError(error)
+
+
+def csr_for_names(names, key):
+    """
+    Generate a certificate signing request for the given names and private key.
+
+    ..  seealso:: `acme.client.Client.request_issuance`
+
+    ..  seealso:: `generate_private_key`
+
+    :param ``List[str]``: One or more names (subjectAltName) for which to
+        request a certificate.
+    :param key: A Cryptography private key object.
+
+    :rtype: `cryptography.x509.CertificateSigningRequest`
+    :return: The certificate request message.
+    """
+    if len(names) == 0:
+        raise ValueError('Must have at least one name')
+    if len(names[0]) > 64:
+        raise ValueError('First name must not be longer than 64 characters')
+    return (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, names[0][:64])]))
+        .add_extension(
+            x509.SubjectAlternativeName(map(x509.DNSName, names)),
+            critical=False)
+        .sign(key, hashes.SHA256(), default_backend()))
+
+
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
-    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap']
+    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap',
+    'encode_csr', 'decode_csr', 'csr_for_names']

@@ -1,20 +1,29 @@
 from codecs import decode
+from functools import partial
 
 import attr
 from acme import challenges
 from acme.jose import b64encode
+from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import ExtensionOID
 from hypothesis import strategies as s
-from hypothesis import example, given
+from hypothesis import assume, example, given
+from service_identity._common import (
+    DNS_ID, DNSPattern, verify_service_identity)
+from service_identity.exceptions import VerificationError
 from service_identity.pyopenssl import verify_hostname
 from testtools import ExpectedException, TestCase
-from testtools.matchers import Equals, IsInstance, Not
+from testtools.matchers import (
+    Equals, IsInstance, MatchesAll, MatchesPredicate, Not)
 
-from txacme.test.test_client import RSA_KEY_512
+from txacme.test import strategies as ts
+from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
-    cert_cryptography_to_pyopenssl, generate_private_key,
-    generate_tls_sni_01_cert, key_cryptography_to_pyopenssl)
+    cert_cryptography_to_pyopenssl, csr_for_names, decode_csr, encode_csr,
+    generate_private_key, generate_tls_sni_01_cert,
+    key_cryptography_to_pyopenssl)
 
 
 class GeneratePrivateKeyTests(TestCase):
@@ -71,7 +80,7 @@ class GenerateCertTests(TestCase):
         The certificates generated verify using
         `~acme.challenges.TLSSNI01Response.verify_cert`.
         """
-        ckey = RSA_KEY_512.key._wrapped
+        ckey = RSA_KEY_512_RAW
         challenge = challenges.TLSSNI01(token=token)
         response = challenge.response(RSA_KEY_512)
         server_name = response.z_domain.decode('ascii')
@@ -92,4 +101,64 @@ class GenerateCertTests(TestCase):
         verify_hostname(NotAConnection(ocert), server_name)
 
 
-__all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests']
+class CSRTests(TestCase):
+    """
+    `encode_csr` and `decode_csr` serialize CSRs in JOSE Base64 DER encoding.
+    """
+    @given(names=s.lists(ts.dns_names(), min_size=1))
+    def test_roundtrip(self, names):
+        """
+        The encoding roundtrips.
+        """
+        assume(len(names[0]) <= 64)
+        csr = csr_for_names(names, RSA_KEY_512_RAW)
+        self.assertThat(decode_csr(encode_csr(csr)), Equals(csr))
+
+    def test_empty_names_invalid(self):
+        """
+        `csr_for_names` raises `ValueError` if given an empty list of names.
+        """
+        with ExpectedException(ValueError):
+            csr_for_names([], RSA_KEY_512_RAW)
+
+    @given(names=s.lists(ts.dns_names(), min_size=1),
+           key=s.just(RSA_KEY_512_RAW))
+    def test_valid_for_names(self, names, key):
+        """
+        `csr_for_names` returns a CSR that is actually valid for the given
+        names.
+        """
+        assume(len(names[0]) <= 64)
+
+        def _verify(name, csr):
+            # This is really terrible. Probably can be better after
+            # pyca/service_identity#14 is resolved.
+            csr_ids = [
+                DNSPattern(csr_name.encode('utf-8'))
+                for csr_name
+                in (
+                    csr.extensions
+                    .get_extension_for_oid(
+                        ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+                    .value
+                    .get_values_for_type(x509.DNSName)
+                )]
+            ids = [DNS_ID(name)]
+            try:
+                verify_service_identity(
+                    cert_patterns=csr_ids, obligatory_ids=ids, optional_ids=[])
+            except VerificationError:
+                return False
+            else:
+                return True
+
+        self.assertThat(
+            csr_for_names(names, key),
+            MatchesAll(*[
+                MatchesPredicate(
+                    partial(_verify, name),
+                    'not valid for {!r}'.format(name))
+                for name in names]))
+
+
+__all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']

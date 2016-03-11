@@ -3,13 +3,15 @@ ACME client API (like :mod:`acme.client`) implementation for Twisted.
 """
 import re
 import time
+from functools import partial
 
 from acme import errors, jose, jws, messages
 from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from eliot.twisted import DeferredContext
+from OpenSSL import crypto
 from treq import json_content
 from treq.client import HTTPClient
-from twisted.internet.defer import succeed, maybeDeferred
+from twisted.internet.defer import maybeDeferred, succeed
 from twisted.internet.task import deferLater
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
@@ -17,10 +19,12 @@ from twisted.web.http_headers import Headers
 
 from txacme.logging import (
     LOG_ACME_ANSWER_CHALLENGE, LOG_ACME_CONSUME_DIRECTORY,
-    LOG_ACME_CREATE_AUTHORIZATION, LOG_ACME_POLL_AUTHORIZATION,
-    LOG_ACME_REGISTER, LOG_ACME_UPDATE_REGISTRATION, LOG_HTTP_PARSE_LINKS,
-    LOG_JWS_ADD_NONCE, LOG_JWS_CHECK_RESPONSE, LOG_JWS_GET, LOG_JWS_GET_NONCE,
-    LOG_JWS_HEAD, LOG_JWS_POST, LOG_JWS_REQUEST, LOG_JWS_SIGN)
+    LOG_ACME_CREATE_AUTHORIZATION, LOG_ACME_FETCH_CHAIN,
+    LOG_ACME_POLL_AUTHORIZATION, LOG_ACME_REGISTER,
+    LOG_ACME_REQUEST_CERTIFICATE, LOG_ACME_UPDATE_REGISTRATION,
+    LOG_HTTP_PARSE_LINKS, LOG_JWS_ADD_NONCE, LOG_JWS_CHECK_RESPONSE,
+    LOG_JWS_GET, LOG_JWS_GET_NONCE, LOG_JWS_HEAD, LOG_JWS_POST,
+    LOG_JWS_REQUEST, LOG_JWS_SIGN)
 from txacme.util import tap
 
 
@@ -399,6 +403,92 @@ class Client(object):
         except ValueError:
             return http.stringToDatetime(val) - _now()
 
+    def request_issuance(self, csr, decode_cert=partial(
+            crypto.load_certificate, crypto.FILETYPE_ASN1)):
+        """
+        Request a certificate.
+
+        Authorizations should have already been completed for all of the names
+        requested in the CSR.
+
+        Note that unlike `acme.client.Client.request_issuance`, the certificate
+        resource will have the body data as raw bytes.
+
+        ..  seealso:: `txacme.util.csr_for_names`
+
+        ..  todo:: Delayed issuance is not currently supported, the server must
+        issue the requested certificate immediately.
+
+        :param csr: A certificate request message: normally
+            `txacme.messages.CertificateRequest` or
+            `acme.messages.CertificateRequest`.
+
+        :rtype: Deferred[`acme.messages.CertificateResource`]
+        :return: The issued certificate.
+        """
+        action = LOG_ACME_REQUEST_CERTIFICATE()
+        with action.context():
+            return (
+                DeferredContext(
+                    self._client.post(
+                        self.directory[csr], csr,
+                        content_type=DER_CONTENT_TYPE,
+                        headers=Headers({b'Accept': [DER_CONTENT_TYPE]})))
+                .addCallback(self._expect_response, http.CREATED)
+                .addCallback(self._parse_certificate)
+                .addActionFinish())
+
+    @classmethod
+    def _parse_certificate(cls, response):
+        """
+        Parse a response containing a certificate resource.
+        """
+        links = _parse_header_links(response)
+        try:
+            cert_chain_uri = links[u'up'][u'url']
+        except KeyError:
+            cert_chain_uri = None
+        return (
+            response.content()
+            .addCallback(
+                lambda body: messages.CertificateResource(
+                    uri=cls._maybe_location(response),
+                    cert_chain_uri=cert_chain_uri,
+                    body=body))
+            )
+
+    def fetch_chain(self, certr, max_length=10):
+        """
+        Fetch the intermediary chain for a certificate.
+
+        :param acme.messages.CertificateResource certr: The certificate to
+            fetch the chain for.
+        :param int max_length: The maximum length of the chain that will be
+            fetched.
+
+        :rtype: Deferred[List[`acme.messages.CertificateResource`]]
+        :return: The issuer certificate chain, ordered with the trust anchor
+                 last.
+        """
+        action = LOG_ACME_FETCH_CHAIN()
+        with action.context():
+            if certr.cert_chain_uri is None:
+                return succeed([])
+            elif max_length < 1:
+                raise errors.ClientError('chain too long')
+            return (
+                DeferredContext(
+                    self._client.get(
+                        certr.cert_chain_uri,
+                        content_type=DER_CONTENT_TYPE,
+                        headers=Headers({b'Accept': [DER_CONTENT_TYPE]})))
+                .addCallback(self._parse_certificate)
+                .addCallback(
+                    lambda issuer:
+                    self.fetch_chain(issuer, max_length=max_length - 1)
+                    .addCallback(lambda chain: [issuer] + chain))
+                .addActionFinish())
+
 
 def _find_tls_sni_01_challenge(authzr):
     """
@@ -488,6 +578,7 @@ def poll_until_valid(clock, client, authzr, timeout=300.0):
 
 JSON_CONTENT_TYPE = b'application/json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
+DER_CONTENT_TYPE = b'application/pkix-cert'
 REPLAY_NONCE_HEADER = b'Replay-Nonce'
 
 
@@ -753,4 +844,4 @@ __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
     'answer_tls_sni_01_challenge', 'poll_until_valid', 'NoSupportedChallenges',
-    'AuthorizationFailed']
+    'AuthorizationFailed', 'DER_CONTENT_TYPE']

@@ -9,8 +9,8 @@ from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
 
 from txacme.challenges import _MergingMappingProxy, TLSSNI01Responder
-from txacme.test.strategies import dns_name
-from txacme.test.test_client import RSA_KEY_512
+from txacme.test.strategies import dns_names
+from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
 
 class ResponderTests(TestCase):
@@ -19,7 +19,7 @@ class ResponderTests(TestCase):
     with txsni.
     """
     @example(u'example.com')
-    @given(dns_name())
+    @given(dns_names())
     def test_stop_responding_already_stopped(self, server_name):
         """
         Calling ``stop_responding`` when we are not responding for a server
@@ -35,7 +35,7 @@ class ResponderTests(TestCase):
         Calling ``start_responding`` makes an appropriate entry appear in the
         host map.
         """
-        ckey = RSA_KEY_512.key._wrapped
+        ckey = RSA_KEY_512_RAW
         challenge = challenges.TLSSNI01(token=token)
         response = challenge.response(RSA_KEY_512)
         server_name = response.z_domain.decode('ascii')
