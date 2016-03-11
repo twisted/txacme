@@ -1249,6 +1249,7 @@ class ClientTests(TestCase):
             in cert_urls
             ], self.expectThat)
 
+    @example([u'http://example.com/1', u'http://example.com/2'])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
                    min_size=1, max_size=10))
@@ -1273,6 +1274,7 @@ class ClientTests(TestCase):
                             cert_chain_uri=Equals(issuer_url))
                         for url, issuer_url in urls])))
 
+    @example([u'http://example.com/{}'.format(n) for n in range(20)])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
                    min_size=11))
