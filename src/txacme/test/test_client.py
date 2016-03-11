@@ -258,10 +258,7 @@ class RecordingResponder(object):
         self.names.add(server_name)
 
     def stop_responding(self, server_name):
-        try:
-            self.names.remove(server_name)
-        except KeyError:
-            pass
+        self.names.discard(server_name)
 
 
 class ClientTests(TestCase):

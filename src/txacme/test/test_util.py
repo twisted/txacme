@@ -143,13 +143,13 @@ class CSRTests(TestCase):
             csr_for_names(names, key),
             MatchesAll(*[ValidForName(name) for name in names]))
 
-    def common_name_too_long(self):
+    def test_common_name_too_long(self):
         """
         If the first name provided is too long, `~txacme.util.csr_for_names`
         raises `ValueError`.
         """
         with ExpectedException(ValueError):
-            csr_for_names([u'a' * 65])
+            csr_for_names([u'a' * 65], RSA_KEY_512_RAW)
 
 
 __all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']
