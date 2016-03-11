@@ -416,7 +416,7 @@ class Client(object):
 
         ..  seealso:: `txacme.util.csr_for_names`
 
-        ..  todo:: Delayed issuance is not currently supported, the server must
+        ..  todo: Delayed issuance is not currently supported, the server must
         issue the requested certificate immediately.
 
         :param csr: A certificate request message: normally
