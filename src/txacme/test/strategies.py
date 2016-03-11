@@ -5,22 +5,30 @@ from hypothesis import strategies as s
 from twisted.python.url import URL
 
 
-def dns_label():
+def dns_labels():
     """
     Strategy for generating limited charset DNS labels.
     """
     # This is too limited, but whatever
-    return s.text(
-        u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-',
-        min_size=1, max_size=25)
+    return (
+        s.text(
+            u'abcdefghijklmnopqrstuvwxyz0123456789-',
+            min_size=1, max_size=25)
+        .filter(
+            lambda s: not any([
+                s.startswith(u'-'),
+                s.endswith(u'-'),
+                s.isdigit(),
+                s[2:4] == u'--',
+            ])))
 
 
-def dns_name():
+def dns_names():
     """
     Strategy for generating limited charset DNS names.
     """
     return (
-        s.lists(dns_label(), min_size=1, max_size=10)
+        s.lists(dns_labels(), min_size=1, max_size=10)
         .map(u'.'.join))
 
 
@@ -31,8 +39,8 @@ def urls():
     return s.builds(
         URL,
         scheme=s.just(u'https'),
-        host=dns_name(),
+        host=dns_names(),
         path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
 
 
-__all__ = ['dns_label', 'dns_name', 'urls']
+__all__ = ['dns_labels', 'dns_names', 'urls']

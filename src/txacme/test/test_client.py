@@ -6,13 +6,14 @@ from operator import attrgetter, methodcaller
 import attr
 from acme import challenges, errors, jose, jws, messages
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, ContainsDict, Equals, IsInstance,
+    AfterPreprocessing, Contains, ContainsDict, Equals, IsInstance,
     MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
     Mismatch, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
@@ -22,18 +23,25 @@ from treq.testing import (
     _SynchronousProducer, HasHeaders, RequestTraversalAgent,
     StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import fail, succeed
+from twisted.internet.defer import CancelledError, fail, maybeDeferred, succeed
+from twisted.internet.task import Clock
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http
 from twisted.web.http_headers import Headers
+from zope.interface import implementer
 
 from txacme.client import (
-    _default_client, _parse_header_links, Client, fqdn_identifier,
-    JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient, ServerError)
-from txacme.test.strategies import dns_name, urls
-from txacme.util import generate_private_key
+    _default_client, _find_tls_sni_01_challenge, _parse_header_links,
+    answer_tls_sni_01_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
+    fqdn_identifier, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient,
+    NoSupportedChallenges, poll_until_valid, ServerError)
+from txacme.interfaces import ITLSSNI01Responder
+from txacme.messages import CertificateRequest
+from txacme.test import strategies as ts
+from txacme.util import (
+    csr_for_names, generate_private_key, generate_tls_sni_01_cert)
 
 
 def failed_with(matcher):
@@ -42,7 +50,7 @@ def failed_with(matcher):
 
 # from cryptography:
 
-RSA_KEY_512 = jose.JWKRSA(key=rsa.RSAPrivateNumbers(
+RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
     p=int(
         "d57846898d5c0de249c08467586cb458fa9bc417cdf297f73cfc52281b787cd9", 16
     ),
@@ -70,7 +78,9 @@ RSA_KEY_512 = jose.JWKRSA(key=rsa.RSAPrivateNumbers(
             16
         ),
     )
-).private_key(default_backend()))
+).private_key(default_backend())
+
+RSA_KEY_512 = jose.JWKRSA(key=RSA_KEY_512_RAW)
 
 
 class Always(object):
@@ -124,6 +134,8 @@ class ClientFixture(Fixture):
             u'https://example.org/acme/revoke-cert',
             messages.NewAuthorization:
             u'https://example.org/acme/new-authz',
+            messages.CertificateRequest:
+            u'https://example.org/acme/new-cert',
             })
         if key is None:
             key = jose.JWKRSA(key=generate_private_key('rsa'))
@@ -210,12 +222,13 @@ def on_jws(matcher):
             jws.JWS.from_json,
             MatchesAll(
                 MatchesPredicate(
-                    methodcaller('verify'), 'JWS message does not verify'),
+                    methodcaller('verify'), '%r does not verify'),
                 AfterPreprocessing(
                     attrgetter('payload'),
                     on_json(matcher)))))
 
 
+@implementer(ITLSSNI01Responder)
 @attr.s
 class TestResponse(object):
     """
@@ -235,6 +248,17 @@ class TestResponse(object):
         if self.links is not None:
             h.setRawHeaders(b'link', self.links)
         return h
+
+
+@attr.s
+class RecordingResponder(object):
+    names = attr.ib()
+
+    def start_responding(self, server_name):
+        self.names.add(server_name)
+
+    def stop_responding(self, server_name):
+        self.names.discard(server_name)
 
 
 class ClientTests(TestCase):
@@ -682,7 +706,7 @@ class ClientTests(TestCase):
                     typ=messages.IDENTIFIER_FQDN, value=u'example.org'))
 
     @example(u'example.com')
-    @given(dns_name())
+    @given(ts.dns_names())
     def test_fqdn_identifier(self, name):
         """
         `~txacme.client.fqdn_identifier` constructs an
@@ -755,7 +779,7 @@ class ClientTests(TestCase):
 
     @example(URL.fromText(u'https://example.org/'),
              URL.fromText(u'https://example.com/'))
-    @given(urls(), urls())
+    @given(ts.urls(), ts.urls())
     def test_challenge_unexpected_uri(self, url1, url2):
         """
         ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
@@ -772,7 +796,7 @@ class ClientTests(TestCase):
 
     @example(name=u'example.com', retry_after=60, date_string=False)
     @example(name=u'example.org', retry_after=60, date_string=True)
-    @given(name=dns_name(),
+    @given(name=ts.dns_names(),
            retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
            date_string=s.booleans())
     def test_poll(self, name, retry_after, date_string):
@@ -851,6 +875,425 @@ class ClientTests(TestCase):
                             u'https://example.org/acme/new-cert')),
                     Nearly(retry_after, 1.0),
                 ])))
+
+    def test_tls_sni_01_no_singleton(self):
+        """
+        If a suitable singleton challenge is not found,
+        `.NoSupportedChallenges` is raised.
+        """
+        challs = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            {u'type': u'tls-sni-01',
+             u'uri': u'https://example.org/acme/authz/1/2',
+             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+            ]
+        combinations = ((0, 2), (1, 2))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=list(map(
+                    messages.ChallengeBody.from_json,
+                    challs)),
+                combinations=combinations))
+        with ExpectedException(NoSupportedChallenges):
+            _find_tls_sni_01_challenge(authzr)
+
+    def test_no_tls_sni_01(self):
+        """
+        If no tls-sni-01 challenges are available, `.NoSupportedChallenges` is
+        raised.
+        """
+        challs = [
+            {u'type': u'http-01',
+             u'uri': u'https://example.org/acme/authz/1/0',
+             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+            {u'type': u'dns',
+             u'uri': u'https://example.org/acme/authz/1/1',
+             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+            {u'type': u'tls-sni-01',
+             u'uri': u'https://example.org/acme/authz/1/2',
+             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+            ]
+        combinations = ((0,), (1,))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=list(map(
+                    messages.ChallengeBody.from_json,
+                    challs)),
+                combinations=combinations))
+        with ExpectedException(NoSupportedChallenges):
+            _find_tls_sni_01_challenge(authzr)
+
+    def test_only_tls_sni_01(self):
+        """
+        If a singleton tls-sni-01 challenge is available, it is returned.
+        """
+        challs = list(map(
+            messages.ChallengeBody.from_json,
+            [{u'type': u'http-01',
+              u'uri': u'https://example.org/acme/authz/1/0',
+              u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
+             {u'type': u'dns',
+              u'uri': u'https://example.org/acme/authz/1/1',
+              u'token': u'DGyRejmCefe7v4NfDGDKfA'},
+             {u'type': u'tls-sni-01',
+              u'uri': u'https://example.org/acme/authz/1/2',
+              u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
+             ]))
+        combinations = ((0,), (1,), (2,))
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=challs,
+                combinations=combinations))
+        self.assertThat(
+            _find_tls_sni_01_challenge(authzr),
+            MatchesAll(
+                IsInstance(messages.ChallengeBody),
+                MatchesStructure(
+                    chall=IsInstance(challenges.TLSSNI01))))
+
+    def test_answer_tls_sni_01_challenge(self):
+        """
+        The challenge hostname is found in the responder after invoking
+        `.answer_tls_sni_01_challenge`.
+        """
+        names = set()
+        responder = RecordingResponder(names)
+        uri = u'https://example.org/acme/authz/1/1'
+        key_authorization = (
+            u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
+            u'QF6lXqTKx4OOF7ECC4Jf1F080BGhHQbe0')
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri,
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending'})
+        authzr = messages.AuthorizationResource(
+            body=messages.Authorization(
+                challenges=[challb],
+                combinations=[[0]]))
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/authz/1/1',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(uri),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'challenge',
+                     u'type': u'tls-sni-01',
+                     u'keyAuthorization': key_authorization,
+                     }))]),
+              (http.OK,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'link': b'<https://example.org/acme/authz/1>;rel="up"',
+                },
+               _json_dumps({
+                   u'uri': uri,
+                   u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+                   u'type': u'tls-sni-01',
+                   u'status': u'processing',
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                answer_tls_sni_01_challenge(client, authzr, responder),
+                succeeded(Always()))
+            challenge_name = (
+                u'7320864740220ae7dee74baacba7a3ec.'
+                u'f79e3a00bad30df0a7fdeaebe0944336.acme.invalid')
+            self.assertThat(names, Contains(challenge_name))
+            self.assertThat(
+                maybeDeferred(responder.stop_responding, challenge_name),
+                succeeded(Always()))
+            self.assertThat(names, Equals(set()))
+
+    def _make_poll_response(self, uri, identifier_json):
+        """
+        Return a factory for a poll response.
+        """
+        def rr(status, error=None):
+            chall = {
+                u'type': u'tls-sni-01',
+                u'status': status,
+                u'uri': uri + u'/0',
+                u'token': u'IlirfxKKXAsHtmzK29Pj8A'}
+            if error is not None:
+                chall[u'error'] = error
+            return (
+                MatchesListwise([
+                    Equals(b'GET'),
+                    Equals(uri),
+                    Equals({}),
+                    Always(),
+                    Always()]),
+                (http.ACCEPTED,
+                 {b'content-type': JSON_CONTENT_TYPE,
+                  b'replay-nonce': jose.b64encode(b'nonce2'),
+                  b'location': uri.encode('ascii'),
+                  b'link': b'<https://example.org/acme/new-cert>;rel="next"'},
+                 _json_dumps({
+                     u'status': status,
+                     u'identifier': identifier_json,
+                     u'challenges': [chall],
+                     u'combinations': [[0]],
+                 })))
+        return rr
+
+    @example(name=u'example.com')
+    @given(name=ts.dns_names())
+    def test_poll_timeout(self, name):
+        """
+        If the timeout is exceeded during polling, `.poll_until_valid` will
+        fail with ``CancelledError``.
+        """
+        identifier_json = {u'type': u'dns', u'value': name}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'pending'),
+             rr(u'pending'),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending'})
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5, 5])
+            self.assertThat(
+                d,
+                failed_with(IsInstance(CancelledError)))
+
+    @example(name=u'example.com')
+    @given(name=ts.dns_names())
+    def test_poll_invalid(self, name):
+        """
+        If the authorization enters an invalid state while polling,
+        `.poll_until_valid` will fail with `.AuthorizationFailed`.
+        """
+        identifier_json = {u'type': u'dns', u'value': name}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'invalid', {
+                 u'type': u'urn:acme:error:connection',
+                 u'detail': u'Failed to connect'}),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending',
+            })
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5])
+            self.assertThat(
+                d,
+                failed_with(MatchesAll(
+                    IsInstance(AuthorizationFailed),
+                    MatchesStructure(
+                        status=Equals(messages.STATUS_INVALID),
+                        errors=Equals([
+                            messages.Error(
+                                typ=u'urn:acme:error:connection',
+                                detail=u'Failed to connect',
+                                title=None)])),
+                    AfterPreprocessing(
+                        repr,
+                        StartsWith(u'AuthorizationFailed(<Status(invalid)')))))
+
+    @example(name=u'example.com')
+    @given(name=ts.dns_names())
+    def test_poll_valid(self, name):
+        """
+        If the authorization enters a valid state while polling,
+        `.poll_until_valid` will fire with the updated authorization.
+        """
+        identifier_json = {u'type': u'dns', u'value': name}
+        uri = u'https://example.org/acme/authz/1'
+        rr = self._make_poll_response(uri, identifier_json)
+        sequence = RequestSequence(
+            [rr(u'pending'),
+             rr(u'valid'),
+             ], self.expectThat)
+        clock = Clock()
+        challb = messages.ChallengeBody.from_json({
+            u'uri': uri + u'/0',
+            u'token': u'IlirfxKKXAsHtmzK29Pj8A',
+            u'type': u'tls-sni-01',
+            u'status': u'pending',
+            })
+        authzr = messages.AuthorizationResource(
+            uri=uri,
+            body=messages.Authorization(
+                identifier=messages.Identifier.from_json(identifier_json),
+                challenges=[challb],
+                combinations=[[0]]))
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            clock.pump([5, 5])
+            self.assertThat(
+                d,
+                succeeded(IsInstance(messages.AuthorizationResource)))
+
+    @example(name=u'example.com',
+             issuer_url=URL.fromText(u'https://example.org/acme/ca-cert'))
+    @given(name=ts.dns_names(),
+           issuer_url=ts.urls())
+    def test_request_issuance(self, name, issuer_url):
+        """
+        If issuing is successful, a certificate resource is returned.
+        """
+        assume(len(name) <= 64)
+        cert_request = CertificateRequest(
+            csr=csr_for_names([name], RSA_KEY_512_RAW))
+        cert, _ = generate_tls_sni_01_cert(
+            name, _generate_private_key=lambda _: RSA_KEY_512_RAW)
+        cert_bytes = cert.public_bytes(serialization.Encoding.DER)
+        sequence = RequestSequence([
+            _nonce_response(u'https://example.org/acme/new-cert', b'nonce'),
+            (MatchesListwise([
+                Equals(b'POST'),
+                Equals(u'https://example.org/acme/new-cert'),
+                Equals({}),
+                ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                on_jws(AfterPreprocessing(
+                    CertificateRequest.from_json,
+                    Equals(cert_request)))]),
+             (http.CREATED,
+              {b'content-type': DER_CONTENT_TYPE,
+               b'replay-nonce': jose.b64encode(b'nonce2'),
+               b'location': b'https://example.org/acme/cert/asdf',
+               b'link': u'<{!s}>;rel="up"'.format(
+                   issuer_url.asURI().asText()).encode('utf-8')},
+              cert_bytes)),
+        ], self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.request_issuance(
+                    CertificateRequest(
+                        csr=csr_for_names([name], RSA_KEY_512_RAW))),
+                succeeded(MatchesStructure(
+                    body=Equals(cert_bytes))))
+
+    def test_fetch_chain_empty(self):
+        """
+        If a certificate has no issuer link, `.Client.fetch_chain` returns an
+        empty chain.
+        """
+        cert = messages.CertificateResource(cert_chain_uri=None)
+        sequence = RequestSequence([], self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.fetch_chain(cert),
+                succeeded(Equals([])))
+
+    def _make_cert_sequence(self, cert_urls):
+        """
+        Build a sequence for fetching a list of certificates.
+        """
+        return RequestSequence([
+            (MatchesListwise([
+                Equals(b'GET'),
+                Equals(url),
+                Equals({}),
+                ContainsDict({b'Accept': Equals([DER_CONTENT_TYPE])}),
+                Always()]),
+             (http.OK,
+              {b'content-type': DER_CONTENT_TYPE,
+               b'location': url.encode('utf-8'),
+               b'link':
+               u'<{!s}>;rel="up"'.format(
+                   issuer_url).encode('utf-8')
+               if issuer_url is not None else b''},
+              b''))
+            for url, issuer_url
+            in cert_urls
+            ], self.expectThat)
+
+    @example([u'http://example.com/1', u'http://example.com/2'])
+    @given(s.lists(s.integers()
+                   .map(lambda n: u'http://example.com/{}'.format(n)),
+                   min_size=1, max_size=10))
+    def test_fetch_chain_okay(self, cert_urls):
+        """
+        A certificate chain that is shorter than the max length is returned.
+        """
+        cert = messages.CertificateResource(
+            uri=u'http://example.com/',
+            cert_chain_uri=cert_urls[0])
+        urls = list(zip(cert_urls, cert_urls[1:] + [None]))
+        sequence = self._make_cert_sequence(urls)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.fetch_chain(cert),
+                succeeded(
+                    MatchesListwise([
+                        MatchesStructure(
+                            uri=Equals(url),
+                            cert_chain_uri=Equals(issuer_url))
+                        for url, issuer_url in urls])))
+
+    @example([u'http://example.com/{}'.format(n) for n in range(20)])
+    @given(s.lists(s.integers()
+                   .map(lambda n: u'http://example.com/{}'.format(n)),
+                   min_size=11))
+    def test_fetch_chain_too_long(self, cert_urls):
+        """
+        A certificate chain that is too long fails with
+        `~acme.errors.ClientError`.
+        """
+        cert = messages.CertificateResource(
+            uri=u'http://example.com/',
+            cert_chain_uri=cert_urls[0])
+        sequence = self._make_cert_sequence(
+            list(zip(cert_urls, cert_urls[1:]))[:10])
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        with sequence.consume(self.fail):
+            self.assertThat(
+                client.fetch_chain(cert),
+                failed_with(IsInstance(errors.ClientError)))
 
 
 class JWSClientTests(TestCase):

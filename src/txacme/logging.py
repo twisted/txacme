@@ -139,3 +139,15 @@ LOG_ACME_POLL_AUTHORIZATION = ActionType(
                            [int, float],
                            u'How long before polling again?')),
     u'Polling an authorization')
+
+LOG_ACME_REQUEST_CERTIFICATE = ActionType(
+    u'txacme:acme:client:certificate:request',
+    fields(),
+    fields(),
+    u'Requesting a certificate')
+
+LOG_ACME_FETCH_CHAIN = ActionType(
+    u'txacme:acme:client:certificate:fetch-chain',
+    fields(),
+    fields(),
+    u'Fetching a certificate chain')

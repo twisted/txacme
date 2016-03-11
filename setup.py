@@ -55,6 +55,7 @@ setup(
             'hypothesis>=3.0.0,<4.0.0',
             'mock',
             'testrepository>=0.0.20',
+            'testscenarios',
             'testtools>=2.0.0',
             ],
         },

@@ -3,18 +3,22 @@ from codecs import decode
 import attr
 from acme import challenges
 from acme.jose import b64encode
+from acme.jose.errors import DeserializationError
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from hypothesis import strategies as s
-from hypothesis import example, given
+from hypothesis import assume, example, given
 from service_identity.pyopenssl import verify_hostname
 from testtools import ExpectedException, TestCase
-from testtools.matchers import Equals, IsInstance, Not
+from testtools.matchers import Equals, IsInstance, MatchesAll, Not
 
-from txacme.test.test_client import RSA_KEY_512
+from txacme.test import strategies as ts
+from txacme.test.matchers import ValidForName
+from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
-    cert_cryptography_to_pyopenssl, generate_private_key,
-    generate_tls_sni_01_cert, key_cryptography_to_pyopenssl)
+    cert_cryptography_to_pyopenssl, csr_for_names, decode_csr, encode_csr,
+    generate_private_key, generate_tls_sni_01_cert,
+    key_cryptography_to_pyopenssl)
 
 
 class GeneratePrivateKeyTests(TestCase):
@@ -71,12 +75,14 @@ class GenerateCertTests(TestCase):
         The certificates generated verify using
         `~acme.challenges.TLSSNI01Response.verify_cert`.
         """
-        ckey = RSA_KEY_512.key._wrapped
+        ckey = RSA_KEY_512_RAW
         challenge = challenges.TLSSNI01(token=token)
         response = challenge.response(RSA_KEY_512)
         server_name = response.z_domain.decode('ascii')
         cert, pkey = generate_tls_sni_01_cert(
             server_name, _generate_private_key=lambda key_type: ckey)
+
+        self.assertThat(cert, ValidForName(server_name))
 
         ocert = cert_cryptography_to_pyopenssl(cert)
         self.assertThat(
@@ -92,4 +98,58 @@ class GenerateCertTests(TestCase):
         verify_hostname(NotAConnection(ocert), server_name)
 
 
-__all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests']
+class CSRTests(TestCase):
+    """
+    `~txacme.util.encode_csr` and `~txacme.util.decode_csr` serialize CSRs in
+    JOSE Base64 DER encoding.
+    """
+    @example(names=[u'example.com', u'example.org'])
+    @given(names=s.lists(ts.dns_names(), min_size=1))
+    def test_roundtrip(self, names):
+        """
+        The encoding roundtrips.
+        """
+        assume(len(names[0]) <= 64)
+        csr = csr_for_names(names, RSA_KEY_512_RAW)
+        self.assertThat(decode_csr(encode_csr(csr)), Equals(csr))
+
+    def test_decode_garbage(self):
+        """
+        If decoding fails, `~txacme.util.decode_csr` raises
+        `~acme.jose.errors.DeserializationError`.
+        """
+        with ExpectedException(DeserializationError):
+            decode_csr(u'blah blah not a valid CSR')
+
+    def test_empty_names_invalid(self):
+        """
+        `~txacme.util.csr_for_names` raises `ValueError` if given an empty list
+        of names.
+        """
+        with ExpectedException(ValueError):
+            csr_for_names([], RSA_KEY_512_RAW)
+
+    @example(names=[u'example.com', u'example.org'], key=RSA_KEY_512_RAW)
+    @given(names=s.lists(ts.dns_names(), min_size=1),
+           key=s.just(RSA_KEY_512_RAW))
+    def test_valid_for_names(self, names, key):
+        """
+        `~txacme.util.csr_for_names` returns a CSR that is actually valid for
+        the given names.
+        """
+        assume(len(names[0]) <= 64)
+
+        self.assertThat(
+            csr_for_names(names, key),
+            MatchesAll(*[ValidForName(name) for name in names]))
+
+    def test_common_name_too_long(self):
+        """
+        If the first name provided is too long, `~txacme.util.csr_for_names`
+        raises `ValueError`.
+        """
+        with ExpectedException(ValueError):
+            csr_for_names([u'a' * 65], RSA_KEY_512_RAW)
+
+
+__all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']

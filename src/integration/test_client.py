@@ -6,12 +6,12 @@ from __future__ import print_function
 from functools import partial
 
 from acme.jose import JWKRSA
-from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
+from cryptography.hazmat.primitives import serialization
 from eliot import start_action
 from eliot.twisted import DeferredContext
 from twisted.internet import reactor
 from twisted.internet.endpoints import serverFromString
-from twisted.internet.task import deferLater
+from twisted.python.filepath import FilePath
 from twisted.python.url import URL
 from twisted.trial.unittest import TestCase
 from twisted.web.resource import Resource
@@ -20,8 +20,10 @@ from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
 
 from txacme.challenges import TLSSNI01Responder
-from txacme.client import Client, fqdn_identifier
-from txacme.util import generate_private_key, tap
+from txacme.client import (
+    answer_tls_sni_01_challenge, Client, fqdn_identifier, poll_until_valid)
+from txacme.messages import CertificateRequest
+from txacme.util import csr_for_names, generate_private_key, tap
 
 
 STAGING_DIRECTORY = URL.fromText(
@@ -52,14 +54,6 @@ class ClientTests(TestCase):
                 .addActionFinish())
 
     def _test_request_challenges(self, host):
-        def _find_tls(auth):
-            self.auth = auth
-            for challbs in auth.body.resolved_combinations:
-                if tuple(challb.typ for challb in challbs) == (u'tls-sni-01',):
-                    return challbs[0]
-            else:
-                raise RuntimeError('No supported challenges found!')
-
         action = start_action(
             action_type=u'integration:request_challenges',
             host=host)
@@ -67,11 +61,7 @@ class ClientTests(TestCase):
             return (
                 DeferredContext(
                    self. client.request_challenges(fqdn_identifier(host)))
-                .addCallback(_find_tls)
                 .addActionFinish())
-
-    def _create_response(self):
-        self.response = self.challb.response(self.key)
 
     def _create_responder(self):
         action = start_action(action_type=u'integration:create_responder')
@@ -88,32 +78,47 @@ class ClientTests(TestCase):
                 .addCallback(lambda _: responder)
                 .addActionFinish())
 
-    def _test_answer_challenge(self, challb, response):
+    def _test_answer_challenge(self, responder):
         action = start_action(action_type=u'integration:answer_challenge')
         with action.context():
             return (
-                DeferredContext(self.client.answer_challenge(challb, response))
+                DeferredContext(
+                    answer_tls_sni_01_challenge(
+                        self.client, self.authzr, responder))
                 .addActionFinish())
 
     def _test_poll(self, auth):
-        def repoll(result):
-            auth, retry_after = result
-            if auth.body.status in {STATUS_PENDING, STATUS_PROCESSING}:
-                return (
-                    deferLater(reactor, retry_after, lambda: None)
-                    .addCallback(lambda _: self.client.poll(auth))
-                    .addCallback(repoll)
-                    )
-            self.assertEqual(
-                auth.body.status, STATUS_VALID,
-                'Unexpected response received: {!r}'.format(auth.body))
-            return auth
-
         action = start_action(action_type=u'integration:poll')
         with action.context():
             return (
-                DeferredContext(self.client.poll(auth))
-                .addCallback(repoll)
+                DeferredContext(poll_until_valid(reactor, self.client, auth))
+                .addActionFinish())
+
+    def _test_issue(self, name):
+        def got_cert(certr):
+            key_bytes = self.issued_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption())
+            FilePath('issued.crt').setContent(certr.body)
+            FilePath('issued.key').setContent(key_bytes)
+            return certr
+
+        action = start_action(action_type=u'integration:issue')
+        with action.context():
+            self.issued_key = generate_private_key('rsa')
+            csr = csr_for_names([name], self.issued_key)
+            return (
+                DeferredContext(
+                    self.client.request_issuance(CertificateRequest(csr=csr)))
+                .addCallback(got_cert)
+                .addActionFinish())
+
+    def _test_chain(self, certr):
+        action = start_action(action_type=u'integration:chain')
+        with action.context():
+            return (
+                DeferredContext(self.client.fetch_chain(certr))
                 .addActionFinish())
 
     def _test_registration(self):
@@ -129,16 +134,12 @@ class ClientTests(TestCase):
             .addCallback(self._test_agree_to_tos)
             .addCallback(
                 lambda _: self._test_request_challenges(HOST))
-            .addCallback(partial(setattr, self, 'challb'))
-            .addCallback(lambda _: self._create_response())
+            .addCallback(partial(setattr, self, 'authzr'))
             .addCallback(lambda _: self._create_responder())
-            .addCallback(
-                lambda responder: responder.start_responding(
-                    self.response.z_domain.decode('ascii')))
-            .addCallback(
-                lambda _: self._test_answer_challenge(
-                    self.challb, self.response))
-            .addCallback(lambda _: self._test_poll(self.auth))
+            .addCallback(self._test_answer_challenge)
+            .addCallback(lambda _: self._test_poll(self.authzr))
+            .addCallback(lambda _: self._test_issue(HOST))
+            .addCallback(self._test_chain)
             .addActionFinish())
 
     def test_registration(self):
