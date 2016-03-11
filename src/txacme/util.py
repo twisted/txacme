@@ -5,7 +5,8 @@ import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
-from acme import errors, jose
+from acme import jose
+from acme.jose.errors import DeserializationError
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -120,7 +121,7 @@ def decode_csr(b64der):
         return x509.load_der_x509_csr(
             jose.decode_b64jose(b64der), default_backend())
     except ValueError as error:
-        raise errors.DeserializationError(error)
+        raise DeserializationError(error)
 
 
 def csr_for_names(names, key):

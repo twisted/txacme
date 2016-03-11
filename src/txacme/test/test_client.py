@@ -23,7 +23,7 @@ from treq.testing import (
     _SynchronousProducer, HasHeaders, RequestTraversalAgent,
     StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import CancelledError, fail, succeed
+from twisted.internet.defer import CancelledError, fail, maybeDeferred, succeed
 from twisted.internet.task import Clock
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
@@ -1011,11 +1011,14 @@ class ClientTests(TestCase):
             self.assertThat(
                 answer_tls_sni_01_challenge(client, authzr, responder),
                 succeeded(Always()))
+            challenge_name = (
+                u'7320864740220ae7dee74baacba7a3ec.'
+                u'f79e3a00bad30df0a7fdeaebe0944336.acme.invalid')
+            self.assertThat(names, Contains(challenge_name))
             self.assertThat(
-                names,
-                Contains(
-                    u'7320864740220ae7dee74baacba7a3ec.'
-                    u'f79e3a00bad30df0a7fdeaebe0944336.acme.invalid'))
+                maybeDeferred(responder.stop_responding, challenge_name),
+                succeeded(Always()))
+            self.assertThat(names, Equals(set()))
 
     def _make_poll_response(self, uri, identifier_json):
         """

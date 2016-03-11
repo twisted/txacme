@@ -4,6 +4,7 @@ from functools import partial
 import attr
 from acme import challenges
 from acme.jose import b64encode
+from acme.jose.errors import DeserializationError
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -115,6 +116,14 @@ class CSRTests(TestCase):
         assume(len(names[0]) <= 64)
         csr = csr_for_names(names, RSA_KEY_512_RAW)
         self.assertThat(decode_csr(encode_csr(csr)), Equals(csr))
+
+    def test_decode_garbage(self):
+        """
+        If decoding fails, `~txacme.util.decode_csr` raises
+        `~acme.errors.DeserializationError`.
+        """
+        with ExpectedException(DeserializationError):
+            decode_csr(b'blah blah not a valid CSR')
 
     def test_empty_names_invalid(self):
         """
