@@ -1198,8 +1198,8 @@ class ClientTests(TestCase):
               {b'content-type': DER_CONTENT_TYPE,
                b'replay-nonce': jose.b64encode(b'nonce2'),
                b'location': b'https://example.org/acme/cert/asdf',
-               b'link': b'<{!s}>;rel="up"'.format(
-                   issuer_url.asURI().asText().encode('utf-8'))},
+               b'link': u'<{!s}>;rel="up"'.format(
+                   issuer_url.asURI().asText()).encode('utf-8')},
               cert_bytes)),
         ], self.expectThat)
         client = self.useFixture(
@@ -1241,8 +1241,8 @@ class ClientTests(TestCase):
               {b'content-type': DER_CONTENT_TYPE,
                b'location': url.encode('utf-8'),
                b'link':
-               b'<{!s}>;rel="up"'.format(
-                   issuer_url.encode('utf-8'))
+               u'<{!s}>;rel="up"'.format(
+                   issuer_url).encode('utf-8')
                if issuer_url is not None else b''},
               b''))
             for url, issuer_url
