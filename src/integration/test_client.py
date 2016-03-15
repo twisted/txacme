@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from eliot import start_action
 from eliot.twisted import DeferredContext
 from twisted.internet import reactor
+from twisted.internet.defer import succeed
 from twisted.internet.endpoints import serverFromString
 from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
@@ -20,11 +21,13 @@ from twisted.web.resource import Resource
 from twisted.web.server import Site
 from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
+from zope.interface import implementer
 
-from txacme.challenges import TLSSNI01Responder
+from txacme.challenges import ITLSSNI01Responder, TLSSNI01Responder
 from txacme.client import (
     answer_tls_sni_01_challenge, Client, fqdn_identifier, poll_until_valid)
 from txacme.messages import CertificateRequest
+from txacme.testing import FakeClient
 from txacme.util import csr_for_names, generate_private_key, tap
 
 
@@ -62,21 +65,6 @@ class ClientTestsMixin(object):
             return (
                 DeferredContext(
                    self. client.request_challenges(fqdn_identifier(host)))
-                .addActionFinish())
-
-    def _create_responder(self):
-        action = start_action(action_type=u'integration:create_responder')
-        with action.context():
-            responder = TLSSNI01Responder()
-            host_map = responder.wrap_host_map({})
-            site = Site(Resource())
-            endpoint = TLSEndpoint(
-                endpoint=serverFromString(reactor, self.ENDPOINT),
-                contextFactory=SNIMap(host_map))
-            return (
-                DeferredContext(endpoint.listen(site))
-                .addCallback(lambda port: self.addCleanup(port.stopListening))
-                .addCallback(lambda _: responder)
                 .addActionFinish())
 
     def _test_answer_challenge(self, responder):
@@ -186,4 +174,45 @@ class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
                     client._client._treq._agent._pool.closeCachedConnections)))
             )
 
-__all__ = ['LetsEncryptStagingTests']
+    def _create_responder(self):
+        action = start_action(action_type=u'integration:create_responder')
+        with action.context():
+            responder = TLSSNI01Responder()
+            host_map = responder.wrap_host_map({})
+            site = Site(Resource())
+            endpoint = TLSEndpoint(
+                endpoint=serverFromString(reactor, self.ENDPOINT),
+                contextFactory=SNIMap(host_map))
+            return (
+                DeferredContext(endpoint.listen(site))
+                .addCallback(lambda port: self.addCleanup(port.stopListening))
+                .addCallback(lambda _: responder)
+                .addActionFinish())
+
+
+@implementer(ITLSSNI01Responder)
+class NullResponder(object):
+    """
+    A responder that does absolutely nothing.
+    """
+    def start_responding(self, server_name):
+        pass
+
+    def stop_responding(self, server_name):
+        pass
+
+
+class FakeClientTests(ClientTestsMixin, TestCase):
+    """
+    Tests against our verified fake.
+    """
+    HOST = u'example.com'
+
+    def _create_client(self, key):
+        return succeed(FakeClient(key))
+
+    def _create_responder(self):
+        return succeed(NullResponder())
+
+
+__all__ = ['LetsEncryptStagingTests', 'FakeClientTests']

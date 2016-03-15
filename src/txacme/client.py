@@ -403,8 +403,7 @@ class Client(object):
         except ValueError:
             return http.stringToDatetime(val) - _now()
 
-    def request_issuance(self, csr, decode_cert=partial(
-            crypto.load_certificate, crypto.FILETYPE_ASN1)):
+    def request_issuance(self, csr):
         """
         Request a certificate.
 
