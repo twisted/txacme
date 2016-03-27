@@ -23,7 +23,7 @@ from twisted.internet.defer import Deferred
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 
-from txacme.service import AcmeIssuingService
+from txacme.service import _default_panic, AcmeIssuingService
 from txacme.test import strategies as ts
 from txacme.test.test_client import Always, RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.testing import FakeClient, MemoryStore, NullResponder
@@ -312,6 +312,15 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(d, has_no_result())
             fixture.service.stopService()
             self.assertThat(d, failed(Always()))
+
+    @run_test_with(AsynchronousDeferredRunTest)
+    def test_default_panic(self):
+        try:
+            1 / 0
+        except:
+            f = Failure()
+        _default_panic(f, u'server_name')
+        self.assertThat(flush_logged_errors(), Equals([f]))
 
 
 __all__ = ['AcmeIssuingServiceTests']

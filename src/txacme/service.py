@@ -79,7 +79,7 @@ class AcmeIssuingService(Service):
 
         def done_panicing(ignored):
             self.ready = True
-            for d in self._waiting:
+            for d in list(self._waiting):
                 d.callback(None)
             self._waiting = []
 
@@ -156,8 +156,6 @@ class AcmeIssuingService(Service):
         if self.ready:
             return succeed(None)
         d = Deferred()
-        if self._waiting is None:
-            self._waiting = []
         self._waiting.append(d)
         return d
 
@@ -173,7 +171,7 @@ class AcmeIssuingService(Service):
         Service.stopService(self)
         self.ready = False
         self._registered = False
-        for d in self._waiting:
+        for d in list(self._waiting):
             d.cancel()
         self._waiting = []
         return self._timer_service.stopService()
