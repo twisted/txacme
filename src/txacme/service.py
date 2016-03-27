@@ -81,7 +81,10 @@ class AcmeIssuingService(Service):
                 d.callback(None)
             self._waiting = []
 
-        return self.cert_store.as_dict().addCallback(check)
+        return (
+            self._register()
+            .addCallback(lambda _: self.cert_store.as_dict())
+            .addCallback(check))
 
     def _issue_cert(self, server_name):
         """
@@ -122,6 +125,20 @@ class AcmeIssuingService(Service):
             .addCallback(got_chain)
             .addCallback(partial(self.cert_store.store, server_name)))
 
+    def _register(self):
+        """
+        Register if needed.
+        """
+        def _registered(ign):
+            self._registered = True
+        if self._registered:
+            return succeed(None)
+        else:
+            return (
+                self._client.register()
+                .addCallback(self._client.agree_to_tos)
+                .addCallback(_registered))
+
     def when_certs_valid(self):
         """
         Get a notification once all certificates are valid.
@@ -146,29 +163,19 @@ class AcmeIssuingService(Service):
         Service.startService(self)
         self.ready = False
         self._waiting = []
+        self._registered = False
 
-        def _registered(registration):
-            self._timer_service = TimerService(
-                self.check_interval, self._check_certs)
-            self._timer_service.clock = self._clock
-            self._timer_service.startService()
-            self.registering = None
-
-        self.registering = (
-            self._client.register()
-            .addCallback(self._client.agree_to_tos)
-            .addCallback(_registered))
-        return self.registering
+        self._timer_service = TimerService(
+            self.check_interval, self._check_certs)
+        self._timer_service.clock = self._clock
+        self._timer_service.startService()
 
     def stopService(self):
         Service.stopService(self)
-        if self.registering is None:
-            return self._timer_service.stopService()
-        else:
-            self.registering.cancel()
-            for d in self._waiting:
-                d.cancel()
-            self._waiting = []
+        for d in self._waiting:
+            d.cancel()
+        self._waiting = []
+        return self._timer_service.stopService()
 
 
 __all__ = ['AcmeIssuingService']

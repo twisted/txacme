@@ -171,9 +171,7 @@ class AcmeIssuingServiceTests(TestCase):
         there are no certs in the store.
         """
         service = self.useFixture(AcmeFixture()).service
-        self.assertThat(
-            service.startService(),
-            succeeded(Always()))
+        service.startService()
         self.addCleanup(service.stopService)
         self.assertThat(
             service.when_certs_valid(),
@@ -201,9 +199,7 @@ class AcmeIssuingServiceTests(TestCase):
             for offset, server_name in certs}
         with AcmeFixture(now=now, certs=certs) as fixture:
             service = fixture.service
-            self.assertThat(
-                service.startService(),
-                succeeded(Always()))
+            service.startService()
             self.addCleanup(service.stopService)
             self.assertThat(
                 service.when_certs_valid(),
@@ -217,9 +213,7 @@ class AcmeIssuingServiceTests(TestCase):
         """
         with fixture:
             service = fixture.service
-            self.assertThat(
-                service.startService(),
-                succeeded(Always()))
+            service.startService()
             self.addCleanup(service.stopService)
             self.assertThat(
                 service.when_certs_valid(),
@@ -251,9 +245,7 @@ class AcmeIssuingServiceTests(TestCase):
                 not_valid_after=now + timedelta(days=32)),
             }
         with AcmeFixture(now=now, certs=certs) as fixture:
-            self.assertThat(
-                fixture.service.startService(),
-                succeeded(Always()))
+            fixture.service.startService()
             self.addCleanup(fixture.service.stopService)
             self.assertThat(
                 fixture.service.when_certs_valid(),
@@ -298,9 +290,7 @@ class AcmeIssuingServiceTests(TestCase):
         panics = []
         with AcmeFixture(now=now, certs=certs,
                          panic=lambda *a: panics.append(a)) as fixture:
-            self.assertThat(
-                fixture.service.startService(),
-                succeeded(Always()))
+            fixture.service.startService()
             self.addCleanup(fixture.service.stopService)
             self.assertThat(
                 fixture.service.when_certs_valid(),
@@ -327,9 +317,7 @@ class AcmeIssuingServiceTests(TestCase):
             fixture.service.startService()
             d = fixture.service.when_certs_valid()
             self.assertThat(d, has_no_result())
-            self.assertThat(
-                fixture.service.stopService(),
-                Is(None))
+            fixture.service.stopService()
             self.assertThat(d, failed(Always()))
 
 
