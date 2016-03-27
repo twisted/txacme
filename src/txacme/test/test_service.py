@@ -103,6 +103,34 @@ class AcmeFixture(Fixture):
             generate_key=lambda: RSA_KEY_512_RAW)
 
 
+@s.composite
+def panicing_cert(draw, now, panic):
+    server_name = draw(ts.dns_names().filter(lambda n: len(n) < 50))
+    offset = timedelta(seconds=draw(
+        s.integers(
+                min_value=-1000,
+                max_value=int(panic.total_seconds()))))
+    return (server_name,
+            _generate_cert(
+                server_name,
+                not_valid_before=now + offset - timedelta(seconds=1),
+                not_valid_after=now + offset))
+
+
+@s.composite
+def panicing_certs_fixture(draw):
+    now = draw(datetimes(min_year=1971, timezones=[]))
+    panic = timedelta(seconds=draw(
+        s.integers(min_value=60, max_value=60 * 60 * 24)))
+    certs = dict(
+        draw(
+            s.lists(
+                panicing_cert(now, panic),
+                min_size=1,
+                unique_by=lambda i: i[0])))
+    return AcmeFixture(now=now, panic_interval=panic, certs=certs)
+
+
 class AcmeIssuingServiceTests(TestCase):
     """
     Tests for `txacme.service.AcmeIssuingService`.
@@ -158,36 +186,19 @@ class AcmeIssuingServiceTests(TestCase):
                 service.when_certs_valid(),
                 succeeded(Is(None)))
 
-    @given(now=datetimes(min_year=1971, timezones=[]),
-           panic=s.builds(
-               timedelta,
-               seconds=s.integers(min_value=60, max_value=60 * 60 * 24)),
-           data=s.data())
-    def test_when_certs_valid_certs_expired(self, now, panic, data):
+    @example(
+        AcmeFixture(
+            now=datetime(2000, 1, 1, 0, 0, 0),
+            panic_interval=timedelta(seconds=3600),
+            certs={
+                }))
+    @given(fixture=panicing_certs_fixture())
+    def test_when_certs_valid_certs_expired(self, fixture):
         """
         The deferred returned by ``when_certs_valid`` only fires once all
         panicing and expired certs have been renewed.
         """
-        certs = data.draw(
-            s.lists(
-                s.builds(
-                    lambda server_name, offset:
-                    (server_name,
-                     _generate_cert(
-                         server_name,
-                         not_valid_before=now + offset - timedelta(seconds=1),
-                         not_valid_after=now + offset)),
-                    ts.dns_names().filter(lambda n: len(n) < 50),
-                    s.builds(
-                        timedelta,
-                        seconds=s.integers(
-                            min_value=-1000,
-                            max_value=int(panic.total_seconds())))),
-                min_size=1,
-                unique_by=lambda i: i[0])
-            .map(dict))
-        with AcmeFixture(
-                now=now, panic_interval=panic, certs=certs) as fixture:
+        with fixture:
             service = fixture.service
             self.assertThat(
                 service.startService(),
@@ -195,6 +206,7 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(
                 service.when_certs_valid(),
                 succeeded(Is(None)))
+            max_expiry = fixture.now + service.panic_interval
             self.assertThat(
                 fixture.cert_store.as_dict(),
                 succeeded(AfterPreprocessing(
@@ -202,7 +214,7 @@ class AcmeIssuingServiceTests(TestCase):
                     AllMatch(AllMatch(
                         _match_certificate(
                             MatchesStructure(
-                                not_valid_after=GreaterThan(now + panic))))))))
+                                not_valid_after=GreaterThan(max_expiry))))))))
 
 
 __all__ = ['AcmeIssuingServiceTests']
