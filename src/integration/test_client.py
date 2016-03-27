@@ -7,6 +7,7 @@ from functools import partial
 from os import getenv
 
 from acme.jose import JWKRSA
+from acme.messages import NewRegistration, STATUS_PENDING
 from cryptography.hazmat.primitives import serialization
 from eliot import start_action
 from eliot.twisted import DeferredContext
@@ -46,9 +47,11 @@ class ClientTestsMixin(object):
                 DeferredContext(self._create_client(self.key))
                 .addActionFinish())
 
-    def _test_register(self):
+    def _test_register(self, new_reg=None):
         with start_action(action_type=u'integration:register').context():
-            return DeferredContext(self.client.register()).addActionFinish()
+            return (
+                DeferredContext(self.client.register(new_reg))
+                .addActionFinish())
 
     def _test_agree_to_tos(self, reg):
         with start_action(action_type=u'integration:agree_to_tos').context():
@@ -63,7 +66,17 @@ class ClientTestsMixin(object):
         with action.context():
             return (
                 DeferredContext(
-                   self. client.request_challenges(fqdn_identifier(host)))
+                   self.client.request_challenges(fqdn_identifier(host)))
+                .addActionFinish())
+
+    def _test_poll_pending(self, auth):
+        action = start_action(action_type=u'integration:poll_pending')
+        with action.context():
+            return (
+                DeferredContext(self.client.poll(auth))
+                .addCallback(
+                    lambda auth:
+                    self.assertEqual(auth[0].body.status, STATUS_PENDING))
                 .addActionFinish())
 
     def _test_answer_challenge(self, responder):
@@ -117,13 +130,16 @@ class ClientTestsMixin(object):
             .addCallback(lambda _: self._test_register())
             .addCallback(tap(
                 lambda reg1:
-                self._test_register()
-                .addCallback(lambda reg2: self.assertEqual(reg1, reg2))))
+                self._test_register(
+                    NewRegistration.from_data(email=u'example@example.com'))
+                .addCallback(
+                    lambda reg2: self.assertEqual(reg1.uri, reg2.uri))))
             .addCallback(self._test_agree_to_tos)
             .addCallback(
                 lambda _: self._test_request_challenges(self.HOST))
             .addCallback(partial(setattr, self, 'authzr'))
             .addCallback(lambda _: self._create_responder())
+            .addCallback(tap(lambda _: self._test_poll_pending(self.authzr)))
             .addCallback(self._test_answer_challenge)
             .addCallback(tap(lambda _: self._test_poll(self.authzr)))
             .addCallback(lambda n: self.responder.stop_responding(n))
