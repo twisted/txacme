@@ -71,9 +71,9 @@ class FakeClient(object):
         if new_reg is None:
             new_reg = messages.NewRegistration()
         self.regr = messages.RegistrationResource(
-                body=messages.Registration(
-                    contact=new_reg.contact,
-                    agreement=new_reg.agreement))
+            body=messages.Registration(
+                contact=new_reg.contact,
+                agreement=new_reg.agreement))
         return succeed(self.regr)
 
     def agree_to_tos(self, regr):

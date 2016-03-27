@@ -50,9 +50,7 @@ class AcmeIssuingService(Service):
             panicing = set()
             expiring = set()
             for server_name, objects in certs.items():
-                for o in objects:
-                    if not isinstance(o, Certificate):
-                        continue
+                for o in filter(lambda o: isinstance(o, Certificate), objects):
                     cert = x509.load_pem_x509_certificate(
                         o.as_bytes(), default_backend())
                     until_expiry = cert.not_valid_after - self._now()
@@ -78,11 +76,10 @@ class AcmeIssuingService(Service):
             return gatherResults([d1, d2], consumeErrors=True)
 
         def done_panicing(ignored):
-            if not self.ready:
-                self.ready = True
-                for d in self._waiting:
-                    d.callback(None)
-                del self._waiting
+            self.ready = True
+            for d in self._waiting:
+                d.callback(None)
+            self._waiting = []
 
         return self.cert_store.as_dict().addCallback(check)
 
