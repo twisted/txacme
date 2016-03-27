@@ -56,13 +56,13 @@ def pem_objects(draw):
     """
     key = RSAPrivateKey((
         b'-----BEGIN RSA PRIVATE KEY-----\n' +
-        draw(s.binary(min_size=1).map(encodebytes)) +
-        b'-----END RSA PRIVATE KEY-----\n').decode('utf-8'))
+        encodebytes(draw(s.binary(min_size=1))) +
+        b'-----END RSA PRIVATE KEY-----\n'))
     return [key] + [
         Certificate((
             b'-----BEGIN CERTIFICATE-----\n' +
             encodebytes(cert) +
-            b'-----END CERTIFICATE-----\n').decode('utf-8'))
+            b'-----END CERTIFICATE-----\n'))
         for cert in draw(s.lists(s.binary(min_size=1), min_size=1))]
 
 

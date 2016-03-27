@@ -54,7 +54,7 @@ setup(
     extras_require={
         'test': [
             'fixtures>=1.4.0',
-            'hypothesis>=3.0.0,<4.0.0',
+            'hypothesis>=3.1.0,<4.0.0',
             'mock',
             'testrepository>=0.0.20',
             'testscenarios',
