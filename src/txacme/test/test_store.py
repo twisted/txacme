@@ -1,10 +1,8 @@
-from operator import attrgetter
-
+import pem
 from fixtures import TempDir
-from hypothesis import given
+from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import (
-    AfterPreprocessing, ContainsDict, Equals, Is, IsInstance, MatchesListwise)
+from testtools.matchers import ContainsDict, Equals, Is, IsInstance
 from testtools.twistedsupport import succeeded
 from twisted.python.filepath import FilePath
 
@@ -14,10 +12,38 @@ from txacme.test.test_client import failed_with
 from txacme.testing import MemoryStore
 
 
+EXAMPLE_PEM_OBJECTS = [
+    pem.RSAPrivateKey(
+        b'-----BEGIN RSA PRIVATE KEY-----\n'
+        b'iq63EP+H3w==\n'
+        b'-----END RSA PRIVATE KEY-----\n'),
+    pem.Certificate(
+        b'-----BEGIN CERTIFICATE-----\n'
+        b'yns=\n'
+        b'-----END CERTIFICATE-----\n'),
+    pem.Certificate(
+        b'-----BEGIN CERTIFICATE-----\n'
+        b'pNaiqhAT\n'
+        b'-----END CERTIFICATE-----\n'),
+    ]
+
+EXAMPLE_PEM_OBJECTS2 = [
+    pem.RSAPrivateKey(
+        b'-----BEGIN RSA PRIVATE KEY-----\n'
+        b'fQ==\n'
+        b'-----END RSA PRIVATE KEY-----\n'),
+    pem.Certificate(
+        b'-----BEGIN CERTIFICATE-----\n'
+        b'xUg=\n'
+        b'-----END CERTIFICATE-----\n'),
+    ]
+
+
 class _StoreTestsMixin(object):
     """
     Tests for `txacme.interfaces.ICertificateStore` implementations.
     """
+    @example(u'example.com', EXAMPLE_PEM_OBJECTS)
     @given(ts.dns_names(), ts.pem_objects())
     def test_insert(self, server_name, pem_objects):
         """
@@ -27,16 +53,15 @@ class _StoreTestsMixin(object):
         self.assertThat(
             self.cert_store.store(server_name, pem_objects),
             succeeded(Is(None)))
-        match_objects = MatchesListwise([
-            AfterPreprocessing(attrgetter('_pem_str'), Equals(o._pem_str))
-            for o in pem_objects])
         self.assertThat(
             self.cert_store.get(server_name),
-            succeeded(match_objects))
+            succeeded(Equals(pem_objects)))
         self.assertThat(
             self.cert_store.as_dict(),
-            succeeded(ContainsDict({server_name: match_objects})))
+            succeeded(ContainsDict(
+                {server_name: Equals(pem_objects)})))
 
+    @example(u'example.com', EXAMPLE_PEM_OBJECTS, EXAMPLE_PEM_OBJECTS2)
     @given(ts.dns_names(), ts.pem_objects(), ts.pem_objects())
     def test_insert_twice(self, server_name, pem_objects, pem_objects2):
         """
@@ -48,16 +73,14 @@ class _StoreTestsMixin(object):
         self.assertThat(
             self.cert_store.store(server_name, pem_objects2),
             succeeded(Is(None)))
-        match_objects = MatchesListwise([
-            AfterPreprocessing(attrgetter('_pem_str'), Equals(o._pem_str))
-            for o in pem_objects2])
         self.assertThat(
             self.cert_store.get(server_name),
-            succeeded(match_objects))
+            succeeded(Equals(pem_objects2)))
         self.assertThat(
             self.cert_store.as_dict(),
-            succeeded(ContainsDict({server_name: match_objects})))
+            succeeded(ContainsDict({server_name: Equals(pem_objects2)})))
 
+    @example(u'example.com')
     @given(ts.dns_names())
     def test_get_missing(self, server_name):
         """

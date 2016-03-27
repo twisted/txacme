@@ -1,10 +1,9 @@
 """
-`txacme.interfaces.ICertificateStore` implementations.
+``txacme.interfaces.ICertificateStore`` implementations.
 """
 import attr
 from pem import parse
 from twisted.internet.defer import maybeDeferred, succeed
-from twisted.python.compat import unicode
 from zope.interface import implementer
 
 from txacme.interfaces import ICertificateStore
@@ -24,7 +23,7 @@ class DirectoryStore(object):
         """
         p = self._path.child(server_name.encode('utf-8'))
         if p.isfile():
-            return parse(p.getContent().decode('utf-8'))
+            return parse(p.getContent())
         else:
             raise KeyError(server_name)
 
@@ -33,7 +32,7 @@ class DirectoryStore(object):
 
     def store(self, server_name, pem_objects):
         p = self._path.child(server_name.encode('utf-8'))
-        p.setContent(u''.join(map(unicode, pem_objects)).encode('utf-8'))
+        p.setContent(b''.join(o.as_bytes() for o in pem_objects))
         return succeed(None)
 
     def as_dict(self):

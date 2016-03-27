@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 from fixtures import Fixture
 from hypothesis import strategies as s
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis.extra.datetime import datetimes
 from pem import Certificate, RSAPrivateKey
 from testtools import ExpectedException, TestCase
@@ -56,7 +56,8 @@ def _generate_cert(server_name, not_valid_before, not_valid_after,
             backend=default_backend())
         )
     return [
-        Certificate(cert.public_bytes(serialization.Encoding.PEM)),
+        Certificate(
+            cert.public_bytes(serialization.Encoding.PEM)),
         RSAPrivateKey(
             key.private_bytes(
                 encoding=serialization.Encoding.PEM,
@@ -70,7 +71,7 @@ def _match_certificate(matcher):
         Not(IsInstance(Certificate)),
         AfterPreprocessing(
             lambda c: x509.load_pem_x509_certificate(
-                bytes(c), default_backend()),
+                c.as_bytes(), default_backend()),
             matcher))
 
 
@@ -128,6 +129,9 @@ class AcmeIssuingServiceTests(TestCase):
             service.when_certs_valid(),
             succeeded(Is(None)))
 
+    @example(now=datetime(2000, 1, 1, 0, 0, 0),
+             certs=[(timedelta(seconds=60), u'example.com'),
+                    (timedelta(seconds=90), u'example.org')])
     @given(now=datetimes(min_year=1971, timezones=[]),
            certs=s.lists(
                s.tuples(

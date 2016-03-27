@@ -49,12 +49,12 @@ class AcmeIssuingService(Service):
         def check(certs):
             panicing = set()
             expiring = set()
-            for server_name, objects in certs.iteritems():
+            for server_name, objects in certs.items():
                 for o in objects:
                     if not isinstance(o, Certificate):
                         continue
                     cert = x509.load_pem_x509_certificate(
-                        bytes(o), default_backend())
+                        o.as_bytes(), default_backend())
                     until_expiry = cert.not_valid_after - self._now()
                     if until_expiry <= self.panic_interval:
                         panicing.add(server_name)

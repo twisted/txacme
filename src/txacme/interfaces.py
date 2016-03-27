@@ -79,4 +79,4 @@ class ICertificateStore(Interface):
         """
 
 
-__all__ = ['ITLSSNI01Responder']
+__all__ = ['ITLSSNI01Responder', 'ICertificateStore']
