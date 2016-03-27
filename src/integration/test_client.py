@@ -69,6 +69,7 @@ class ClientTestsMixin(object):
     def _test_answer_challenge(self, responder):
         action = start_action(action_type=u'integration:answer_challenge')
         with action.context():
+            self.responder = responder
             return (
                 DeferredContext(
                     answer_tls_sni_01_challenge(
@@ -124,7 +125,8 @@ class ClientTestsMixin(object):
             .addCallback(partial(setattr, self, 'authzr'))
             .addCallback(lambda _: self._create_responder())
             .addCallback(self._test_answer_challenge)
-            .addCallback(lambda _: self._test_poll(self.authzr))
+            .addCallback(tap(lambda _: self._test_poll(self.authzr)))
+            .addCallback(lambda n: self.responder.stop_responding(n))
             .addCallback(lambda _: self._test_issue(self.HOST))
             .addCallback(self._test_chain)
             .addActionFinish())

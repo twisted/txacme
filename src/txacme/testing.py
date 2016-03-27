@@ -25,22 +25,20 @@ class FakeClient(object):
     """
     _challenge_types = [challenges.TLSSNI01]
 
-    def __init__(self, key, now=datetime.now, ca_key=None):
+    def __init__(self, key, now=datetime.now):
         self.key = key
         self._now = now
         self._registered = False
         self._tos_agreed = None
         self._authorizations = {}
         self._challenges = {}
-        self._ca_key = ca_key
         self._generate_ca_cert()
 
     def _generate_ca_cert(self):
         """
         Generate a CA cert/key.
         """
-        if self._ca_key is None:
-            self._ca_key = generate_private_key(u'rsa')
+        self._ca_key = generate_private_key(u'rsa')
         self._ca_name = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, u'ACME Snake Oil CA')])
         self._ca_cert = (
@@ -171,29 +169,4 @@ class NullResponder(object):
         pass
 
 
-@implementer(ICertificateStore)
-class MemoryStore(object):
-    """
-    A certificate store that keeps certificates in memory only.
-    """
-    def __init__(self, certs=None):
-        if certs is None:
-            self._store = {}
-        else:
-            self._store = dict(certs)
-
-    def get(self, server_name):
-        try:
-            return succeed(self._store[server_name])
-        except KeyError:
-            return fail()
-
-    def store(self, server_name, pem_objects):
-        self._store[server_name] = pem_objects
-        return succeed(None)
-
-    def as_dict(self):
-        return succeed(self._store)
-
-
-__all__ = ['FakeClient', 'MemoryStore', 'NullResponder']
+__all__ = ['FakeClient', 'NullResponder']

@@ -522,10 +522,11 @@ def answer_tls_sni_01_challenge(authzr, client, responder):
     """
     challb = _find_tls_sni_01_challenge(authzr)
     response = challb.response(client.key)
+    name = response.z_domain.decode('ascii')
     return (
-        maybeDeferred(
-            responder.start_responding, response.z_domain.decode('ascii'))
+        maybeDeferred(responder.start_responding, name)
         .addCallback(lambda _: client.answer_challenge(challb, response))
+        .addCallback(lambda _: name)
         )
 
 
