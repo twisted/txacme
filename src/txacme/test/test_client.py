@@ -211,6 +211,7 @@ class RequestSequence(treq_RequestSequence):
 
 def on_json(matcher):
     def _loads(s):
+        assert isinstance(s, bytes)
         s = s.decode('utf-8')
         return json.loads(s)
     return AfterPreprocessing(_loads, matcher)
@@ -1006,7 +1007,7 @@ class ClientTests(TestCase):
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
             self.assertThat(
-                answer_tls_sni_01_challenge(client, authzr, responder),
+                answer_tls_sni_01_challenge(authzr, client, responder),
                 succeeded(Always()))
             challenge_name = (
                 u'7320864740220ae7dee74baacba7a3ec.'
@@ -1079,7 +1080,7 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            d = poll_until_valid(authzr, clock, client, timeout=14.)
             clock.pump([5, 5, 5])
             self.assertThat(
                 d,
@@ -1117,7 +1118,7 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            d = poll_until_valid(authzr, clock, client, timeout=14.)
             clock.pump([5, 5])
             self.assertThat(
                 d,
@@ -1164,7 +1165,7 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(clock, client, authzr, timeout=14.)
+            d = poll_until_valid(authzr, clock, client, timeout=14.)
             clock.pump([5, 5])
             self.assertThat(
                 d,

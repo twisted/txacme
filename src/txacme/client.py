@@ -3,12 +3,10 @@ ACME client API (like :mod:`acme.client`) implementation for Twisted.
 """
 import re
 import time
-from functools import partial
 
 from acme import errors, jose, jws, messages
 from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from eliot.twisted import DeferredContext
-from OpenSSL import crypto
 from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import maybeDeferred, succeed
@@ -403,8 +401,7 @@ class Client(object):
         except ValueError:
             return http.stringToDatetime(val) - _now()
 
-    def request_issuance(self, csr, decode_cert=partial(
-            crypto.load_certificate, crypto.FILETYPE_ASN1)):
+    def request_issuance(self, csr):
         """
         Request a certificate.
 
@@ -511,13 +508,13 @@ def _find_tls_sni_01_challenge(authzr):
         raise NoSupportedChallenges(authzr)
 
 
-def answer_tls_sni_01_challenge(client, authzr, responder):
+def answer_tls_sni_01_challenge(authzr, client, responder):
     """
     Complete an authorization using a responder
 
-    :param .Client client: The ACME client.
     :param ~acme.messages.AuthorizationResource auth: The authorization to
         complete.
+    :param .Client client: The ACME client.
     :param responder: An ``ITLSSNI01Responder`` implementer to use to complete
         the challenge.
 
@@ -525,23 +522,24 @@ def answer_tls_sni_01_challenge(client, authzr, responder):
     """
     challb = _find_tls_sni_01_challenge(authzr)
     response = challb.response(client.key)
+    name = response.z_domain.decode('ascii')
     return (
-        maybeDeferred(
-            responder.start_responding, response.z_domain.decode('ascii'))
+        maybeDeferred(responder.start_responding, name)
         .addCallback(lambda _: client.answer_challenge(challb, response))
+        .addCallback(lambda _: name)
         )
 
 
-def poll_until_valid(clock, client, authzr, timeout=300.0):
+def poll_until_valid(authzr, clock, client, timeout=300.0):
     """
     Poll an authorization until it is in a state other than pending or
     processing.
 
+    :param ~acme.messages.AuthorizationResource auth: The authorization to
+        complete.
     :param clock: The ``IReactorTime`` implementation to use; usually the
         reactor, when not testing.
     :param .Client client: The ACME client.
-    :param ~acme.messages.AuthorizationResource auth: The authorization to
-        complete.
     :param float timeout: Maximum time to poll in seconds, before giving up.
 
     :raises txacme.client.AuthorizationFailed: if the authorization is no
@@ -656,7 +654,8 @@ class JWSClient(object):
             return (
                 jws.JWS.sign(
                     payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
-                .json_dumps())
+                .json_dumps()
+                .encode())
 
     @classmethod
     def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):

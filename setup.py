@@ -48,6 +48,7 @@ setup(
         'attrs',
         'eliot>=0.8.0',
         'treq>=15.1.0',
+        'txsni',
         ],
     extras_require={
         'test': [
