@@ -10,11 +10,11 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
-from twisted.internet.defer import fail, succeed
+from twisted.internet.defer import succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
-from txacme.interfaces import ICertificateStore, ITLSSNI01Responder
+from txacme.interfaces import ITLSSNI01Responder
 from txacme.util import generate_private_key
 
 
