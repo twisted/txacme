@@ -21,13 +21,12 @@ from twisted.web.resource import Resource
 from twisted.web.server import Site
 from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
-from zope.interface import implementer
 
-from txacme.challenges import ITLSSNI01Responder, TLSSNI01Responder
+from txacme.challenges import TLSSNI01Responder
 from txacme.client import (
     answer_tls_sni_01_challenge, Client, fqdn_identifier, poll_until_valid)
 from txacme.messages import CertificateRequest
-from txacme.testing import FakeClient
+from txacme.testing import FakeClient, NullResponder
 from txacme.util import csr_for_names, generate_private_key, tap
 
 
@@ -73,14 +72,14 @@ class ClientTestsMixin(object):
             return (
                 DeferredContext(
                     answer_tls_sni_01_challenge(
-                        self.client, self.authzr, responder))
+                        self.authzr, self.client, responder))
                 .addActionFinish())
 
     def _test_poll(self, auth):
         action = start_action(action_type=u'integration:poll')
         with action.context():
             return (
-                DeferredContext(poll_until_valid(reactor, self.client, auth))
+                DeferredContext(poll_until_valid(auth, reactor, self.client))
                 .addActionFinish())
 
     def _test_issue(self, name):
@@ -188,18 +187,6 @@ class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
                 .addCallback(lambda port: self.addCleanup(port.stopListening))
                 .addCallback(lambda _: responder)
                 .addActionFinish())
-
-
-@implementer(ITLSSNI01Responder)
-class NullResponder(object):
-    """
-    A responder that does absolutely nothing.
-    """
-    def start_responding(self, server_name):
-        pass
-
-    def stop_responding(self, server_name):
-        pass
 
 
 class FakeClientTests(ClientTestsMixin, TestCase):

@@ -3,12 +3,10 @@ ACME client API (like :mod:`acme.client`) implementation for Twisted.
 """
 import re
 import time
-from functools import partial
 
 from acme import errors, jose, jws, messages
 from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
 from eliot.twisted import DeferredContext
-from OpenSSL import crypto
 from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import maybeDeferred, succeed
@@ -510,13 +508,13 @@ def _find_tls_sni_01_challenge(authzr):
         raise NoSupportedChallenges(authzr)
 
 
-def answer_tls_sni_01_challenge(client, authzr, responder):
+def answer_tls_sni_01_challenge(authzr, client, responder):
     """
     Complete an authorization using a responder
 
-    :param .Client client: The ACME client.
     :param ~acme.messages.AuthorizationResource auth: The authorization to
         complete.
+    :param .Client client: The ACME client.
     :param responder: An ``ITLSSNI01Responder`` implementer to use to complete
         the challenge.
 
@@ -531,16 +529,16 @@ def answer_tls_sni_01_challenge(client, authzr, responder):
         )
 
 
-def poll_until_valid(clock, client, authzr, timeout=300.0):
+def poll_until_valid(authzr, clock, client, timeout=300.0):
     """
     Poll an authorization until it is in a state other than pending or
     processing.
 
+    :param ~acme.messages.AuthorizationResource auth: The authorization to
+        complete.
     :param clock: The ``IReactorTime`` implementation to use; usually the
         reactor, when not testing.
     :param .Client client: The ACME client.
-    :param ~acme.messages.AuthorizationResource auth: The authorization to
-        complete.
     :param float timeout: Maximum time to poll in seconds, before giving up.
 
     :raises txacme.client.AuthorizationFailed: if the authorization is no
