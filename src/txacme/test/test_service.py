@@ -37,8 +37,10 @@ def _generate_cert(server_name, not_valid_before, not_valid_after,
     :rtype: `str`
     :return: The certificate in PEM format.
     """
+    common_name = (
+        u'san.too.long.invalid' if len(server_name) > 64 else server_name)
     name = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, server_name)])
+        x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -105,7 +107,7 @@ class AcmeFixture(Fixture):
 
 @s.composite
 def panicing_cert(draw, now, panic):
-    server_name = draw(ts.dns_names().filter(lambda n: len(n) < 50))
+    server_name = draw(ts.dns_names())
     offset = timedelta(seconds=draw(
         s.integers(
                 min_value=-1000,
@@ -119,7 +121,7 @@ def panicing_cert(draw, now, panic):
 
 @s.composite
 def panicing_certs_fixture(draw):
-    now = draw(datetimes(min_year=1971, timezones=[]))
+    now = draw(datetimes(min_year=1971, max_year=2030, timezones=[]))
     panic = timedelta(seconds=draw(
         s.integers(min_value=60, max_value=60 * 60 * 24)))
     certs = dict(
@@ -165,7 +167,7 @@ class AcmeIssuingServiceTests(TestCase):
                s.tuples(
                    s.integers(min_value=0, max_value=1000)
                    .map(lambda s: timedelta(seconds=s)),
-                   ts.dns_names().filter(lambda n: len(n) < 50))))
+                   ts.dns_names())))
     def test_when_certs_valid_all_certs_valid(self, now, certs):
         """
         The deferred returned by ``when_certs_valid`` fires immediately if

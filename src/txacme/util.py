@@ -142,11 +142,13 @@ def csr_for_names(names, key):
     if len(names) == 0:
         raise ValueError('Must have at least one name')
     if len(names[0]) > 64:
-        raise ValueError('First name must not be longer than 64 characters')
+        common_name = u'san.too.long.invalid'
+    else:
+        common_name = names[0]
     return (
         x509.CertificateSigningRequestBuilder()
         .subject_name(x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, names[0][:64])]))
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name)]))
         .add_extension(
             x509.SubjectAlternativeName(list(map(x509.DNSName, names))),
             critical=False)

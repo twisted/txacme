@@ -34,6 +34,7 @@ class FakeClient(object):
         self._challenges = {}
         self._ca_key = ca_key
         self._generate_ca_cert()
+        self._ski_cache = {}
 
     def _generate_ca_cert(self):
         """
@@ -62,6 +63,8 @@ class FakeClient(object):
                 private_key=self._ca_key,
                 algorithm=hashes.SHA256(),
                 backend=default_backend()))
+        self._ca_aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(
+            self._ca_key.public_key())
 
     def register(self, new_reg=None):
         self._registered = True
@@ -140,10 +143,7 @@ class FakeClient(object):
             .add_extension(
                 x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
                 critical=False)
-            .add_extension(
-                x509.AuthorityKeyIdentifier.from_issuer_public_key(
-                    self._ca_key.public_key()),
-                critical=False)
+            .add_extension(self._ca_aki, critical=False)
             .sign(
                 private_key=self._ca_key,
                 algorithm=hashes.SHA256(),

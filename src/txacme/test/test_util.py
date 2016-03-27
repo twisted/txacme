@@ -4,13 +4,16 @@ import attr
 from acme import challenges
 from acme.jose import b64encode
 from acme.jose.errors import DeserializationError
+from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from service_identity.pyopenssl import verify_hostname
 from testtools import ExpectedException, TestCase
-from testtools.matchers import Equals, IsInstance, MatchesAll, Not
+from testtools.matchers import (
+    Equals, IsInstance, MatchesAll, MatchesStructure, Not)
 
 from txacme.test import strategies as ts
 from txacme.test.matchers import ValidForName
@@ -146,10 +149,15 @@ class CSRTests(TestCase):
     def test_common_name_too_long(self):
         """
         If the first name provided is too long, `~txacme.util.csr_for_names`
-        raises `ValueError`.
+        uses a dummy value for the common name.
         """
-        with ExpectedException(ValueError):
-            csr_for_names([u'a' * 65], RSA_KEY_512_RAW)
+        self.assertThat(
+            csr_for_names([u'aaaa.' * 16], RSA_KEY_512_RAW),
+            MatchesStructure(
+                subject=Equals(x509.Name([
+                    x509.NameAttribute(
+                        NameOID.COMMON_NAME,
+                        u'san.too.long.invalid')]))))
 
 
 __all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']
