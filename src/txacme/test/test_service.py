@@ -11,12 +11,17 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from hypothesis.extra.datetime import datetimes
 from pem import Certificate, RSAPrivateKey
-from testtools import ExpectedException, TestCase
+from testtools import ExpectedException, run_test_with, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, AllMatch, GreaterThan, Is, IsInstance, MatchesAny,
+    AfterPreprocessing, AllMatch, Equals, GreaterThan, HasLength,
+    Is, IsInstance, MatchesAny, MatchesDict, MatchesListwise,
     MatchesStructure, Not)
-from testtools.twistedsupport import succeeded
+from testtools.twistedsupport import (
+    AsynchronousDeferredRunTest, failed, flush_logged_errors,
+    has_no_result, succeeded)
+from twisted.internet.defer import Deferred
 from twisted.internet.task import Clock
+from twisted.python.failure import Failure
 
 from txacme.service import AcmeIssuingService
 from txacme.test import strategies as ts
@@ -77,32 +82,46 @@ def _match_certificate(matcher):
             matcher))
 
 
+class HangingClient(object):
+    """
+    Test client that always hangs.
+    """
+    def __getattr__(self, name):
+        return lambda *a, **kw: Deferred()
+
+
 class AcmeFixture(Fixture):
     """
     A fixture for setting up an `~txacme.service.AcmeIssuingService`.
     """
-    def __init__(self, now=None, certs=None,
-                 panic_interval=timedelta(days=15)):
+    def __init__(self, now=None, certs=None, panic_interval=None, panic=None,
+                 client=None):
         super(AcmeFixture, self).__init__()
         if now is None:
             now = datetime(2000, 1, 1, 0, 0, 0)
         self.now = now
         self._certs = certs
         self._panic_interval = panic_interval
+        self._panic = panic
+        self.acme_client = client
 
     def _setUp(self):
         self.cert_store = MemoryStore(self._certs)
         self.clock = Clock()
-        self.acme_client = FakeClient(RSA_KEY_512, lambda: self.now)
+        if self.acme_client is None:
+            self.acme_client = FakeClient(RSA_KEY_512, lambda: self.now)
         self.responder = NullResponder()
-        self.service = AcmeIssuingService(
+        args = dict(
             cert_store=self.cert_store,
             client=self.acme_client,
             clock=self.clock,
             now=lambda: self.now,
             tls_sni_01_responder=self.responder,
             panic_interval=self._panic_interval,
+            panic=self._panic,
             generate_key=lambda: RSA_KEY_512_RAW)
+        self.service = AcmeIssuingService(
+            **{k: v for k, v in args.items() if v is not None})
 
 
 @s.composite
@@ -155,6 +174,7 @@ class AcmeIssuingServiceTests(TestCase):
         self.assertThat(
             service.startService(),
             succeeded(Always()))
+        self.addCleanup(service.stopService)
         self.assertThat(
             service.when_certs_valid(),
             succeeded(Is(None)))
@@ -162,7 +182,7 @@ class AcmeIssuingServiceTests(TestCase):
     @example(now=datetime(2000, 1, 1, 0, 0, 0),
              certs=[(timedelta(seconds=60), u'example.com'),
                     (timedelta(seconds=90), u'example.org')])
-    @given(now=datetimes(min_year=1971, timezones=[]),
+    @given(now=datetimes(min_year=1971, max_year=2030, timezones=[]),
            certs=s.lists(
                s.tuples(
                    s.integers(min_value=0, max_value=1000)
@@ -184,16 +204,11 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(
                 service.startService(),
                 succeeded(Always()))
+            self.addCleanup(service.stopService)
             self.assertThat(
                 service.when_certs_valid(),
                 succeeded(Is(None)))
 
-    @example(
-        AcmeFixture(
-            now=datetime(2000, 1, 1, 0, 0, 0),
-            panic_interval=timedelta(seconds=3600),
-            certs={
-                }))
     @given(fixture=panicing_certs_fixture())
     def test_when_certs_valid_certs_expired(self, fixture):
         """
@@ -205,6 +220,7 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(
                 service.startService(),
                 succeeded(Always()))
+            self.addCleanup(service.stopService)
             self.assertThat(
                 service.when_certs_valid(),
                 succeeded(Is(None)))
@@ -217,6 +233,104 @@ class AcmeIssuingServiceTests(TestCase):
                         _match_certificate(
                             MatchesStructure(
                                 not_valid_after=GreaterThan(max_expiry))))))))
+
+    def test_time_marches_on(self):
+        """
+        Any certs that have exceeded the panic or reissue intervals will be
+        reissued at the next check.
+        """
+        now = datetime(2000, 1, 1, 0, 0, 0)
+        certs = {
+            u'example.com': _generate_cert(
+                u'example.com',
+                not_valid_before=now - timedelta(seconds=1),
+                not_valid_after=now + timedelta(days=31)),
+            u'example.org': _generate_cert(
+                u'example.org',
+                not_valid_before=now - timedelta(seconds=1),
+                not_valid_after=now + timedelta(days=32)),
+            }
+        with AcmeFixture(now=now, certs=certs) as fixture:
+            self.assertThat(
+                fixture.service.startService(),
+                succeeded(Always()))
+            self.addCleanup(fixture.service.stopService)
+            self.assertThat(
+                fixture.service.when_certs_valid(),
+                succeeded(Is(None)))
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(Equals(certs)))
+
+            fixture.now += timedelta(days=1.5)
+            fixture.clock.advance(36 * 60 * 60)
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({
+                        u'example.com': Not(Equals(certs[u'example.com'])),
+                        u'example.org': Equals(certs[u'example.org']),
+                        })))
+
+            fixture.now += timedelta(days=1.5)
+            fixture.clock.advance(36 * 60 * 60)
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({
+                        u'example.com': Not(Equals(certs[u'example.com'])),
+                        u'example.org': Not(Equals(certs[u'example.org'])),
+                        })))
+
+    @run_test_with(AsynchronousDeferredRunTest)
+    def test_errors(self):
+        """
+        If a cert renewal fails within the panic interval, the panic callback
+        is invoked; otherwise the error is logged normally.
+        """
+        now = datetime(2000, 1, 1, 0, 0, 0)
+        certs = {
+            u'a' * 100: _generate_cert(
+                u'example.com',
+                not_valid_before=now - timedelta(seconds=1),
+                not_valid_after=now + timedelta(days=31)),
+            }
+        panics = []
+        with AcmeFixture(now=now, certs=certs,
+                         panic=lambda *a: panics.append(a)) as fixture:
+            self.assertThat(
+                fixture.service.startService(),
+                succeeded(Always()))
+            self.addCleanup(fixture.service.stopService)
+            self.assertThat(
+                fixture.service.when_certs_valid(),
+                succeeded(Is(None)))
+
+            fixture.now += timedelta(days=1.5)
+            fixture.clock.advance(24 * 60 * 60)
+            self.assertThat(flush_logged_errors(), HasLength(1))
+            self.assertThat(panics, Equals([]))
+
+            fixture.now += timedelta(days=15)
+            fixture.clock.advance(24 * 60 * 60)
+            self.assertThat(
+                panics,
+                MatchesListwise([
+                    MatchesListwise([IsInstance(Failure), Equals(u'a' * 100)]),
+                    ]))
+
+    def test_starting_stopping_cancellation(self):
+        """
+        Test the starting and stopping behaviour.
+        """
+        with AcmeFixture(client=HangingClient()) as fixture:
+            fixture.service.startService()
+            d = fixture.service.when_certs_valid()
+            self.assertThat(d, has_no_result())
+            self.assertThat(
+                fixture.service.stopService(),
+                Is(None))
+            self.assertThat(d, failed(Always()))
 
 
 __all__ = ['AcmeIssuingServiceTests']

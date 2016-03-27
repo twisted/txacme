@@ -56,8 +56,8 @@ class AcmeIssuingService(Service):
                     until_expiry = cert.not_valid_after - self._now()
                     if until_expiry <= self.panic_interval:
                         panicing.add(server_name)
-                    elif until_expiry <= self.resissue_interval:
-                        expiring.add(expiring)
+                    elif until_expiry <= self.reissue_interval:
+                        expiring.add(server_name)
             d1 = (
                 gatherResults(
                     [self._issue_cert(server_name)
@@ -166,6 +166,9 @@ class AcmeIssuingService(Service):
             return self._timer_service.stopService()
         else:
             self.registering.cancel()
+            for d in self._waiting:
+                d.cancel()
+            self._waiting = []
 
 
 __all__ = ['AcmeIssuingService']
