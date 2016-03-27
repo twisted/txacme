@@ -11,7 +11,7 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from hypothesis.extra.datetime import datetimes
 from pem import Certificate, RSAPrivateKey
-from testtools import ExpectedException, run_test_with, TestCase
+from testtools import run_test_with, TestCase
 from testtools.matchers import (
     AfterPreprocessing, AllMatch, Equals, GreaterThan, HasLength,
     Is, IsInstance, MatchesAny, MatchesDict, MatchesListwise,
@@ -109,7 +109,8 @@ class AcmeFixture(Fixture):
         self.cert_store = MemoryStore(self._certs)
         self.clock = Clock()
         if self.acme_client is None:
-            self.acme_client = FakeClient(RSA_KEY_512, lambda: self.now)
+            self.acme_client = FakeClient(
+                RSA_KEY_512, now=lambda: self.now, ca_key=RSA_KEY_512_RAW)
         self.responder = NullResponder()
         args = dict(
             cert_store=self.cert_store,
