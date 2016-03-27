@@ -1,7 +1,13 @@
 """
 Miscellaneous strategies for Hypothesis testing.
 """
+try:
+    from base64 import encodebytes
+except ImportError:
+    from base64 import encodestring as encodebytes
+
 from hypothesis import strategies as s
+from pem import Certificate, RSAPrivateKey
 from twisted.python.url import URL
 
 
@@ -43,4 +49,21 @@ def urls():
         path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
 
 
-__all__ = ['dns_labels', 'dns_names', 'urls']
+@s.composite
+def pem_objects(draw):
+    """
+    Strategy for generating ``pem`` objects.
+    """
+    key = RSAPrivateKey((
+        b'-----BEGIN RSA PRIVATE KEY-----\n' +
+        draw(s.binary(min_size=1).map(encodebytes)) +
+        b'-----END RSA PRIVATE KEY-----\n').decode('utf-8'))
+    return [key] + [
+        Certificate((
+            b'-----BEGIN CERTIFICATE-----\n' +
+            encodebytes(cert) +
+            b'-----END CERTIFICATE-----\n').decode('utf-8'))
+        for cert in draw(s.lists(s.binary(min_size=1), min_size=1))]
+
+
+__all__ = ['dns_labels', 'dns_names', 'urls', 'pem_objects']

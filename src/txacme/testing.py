@@ -10,11 +10,11 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
-from twisted.internet.defer import succeed
+from twisted.internet.defer import fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
-from txacme.interfaces import ITLSSNI01Responder
+from txacme.interfaces import ICertificateStore, ITLSSNI01Responder
 from txacme.util import generate_private_key
 
 
@@ -25,20 +25,22 @@ class FakeClient(object):
     """
     _challenge_types = [challenges.TLSSNI01]
 
-    def __init__(self, key, now=datetime.now):
+    def __init__(self, key, now=datetime.now, ca_key=None):
         self.key = key
         self._now = now
         self._registered = False
         self._tos_agreed = None
         self._authorizations = {}
         self._challenges = {}
+        self._ca_key = ca_key
         self._generate_ca_cert()
 
     def _generate_ca_cert(self):
         """
         Generate a CA cert/key.
         """
-        self._ca_key = generate_private_key(u'rsa')
+        if self._ca_key is None:
+            self._ca_key = generate_private_key(u'rsa')
         self._ca_name = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, u'ACME Snake Oil CA')])
         self._ca_cert = (
@@ -169,4 +171,29 @@ class NullResponder(object):
         pass
 
 
-__all__ = ['FakeClient', 'NullResponder']
+@implementer(ICertificateStore)
+class MemoryStore(object):
+    """
+    A certificate store that keeps certificates in memory only.
+    """
+    def __init__(self, certs=None):
+        if certs is None:
+            self._store = {}
+        else:
+            self._store = dict(certs)
+
+    def get(self, server_name):
+        try:
+            return succeed(self._store[server_name])
+        except KeyError:
+            return fail()
+
+    def store(self, server_name, pem_objects):
+        self._store[server_name] = pem_objects
+        return succeed(None)
+
+    def as_dict(self):
+        return succeed(self._store)
+
+
+__all__ = ['FakeClient', 'MemoryStore', 'NullResponder']
