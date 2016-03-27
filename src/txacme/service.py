@@ -40,6 +40,8 @@ class AcmeIssuingService(Service):
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
     _generate_key = attr.ib(default=partial(generate_private_key, u'rsa'))
+    _waiting = attr.ib(default=attr.Factory(list))
+    ready = False
 
     def _check_certs(self):
         """
@@ -151,20 +153,17 @@ class AcmeIssuingService(Service):
         :rtype: ``Deferred``
         :return: A deferred that fires once the initial check has resolved.
         """
-        if not self.running:
-            raise RuntimeError('Service not started')
         if self.ready:
             return succeed(None)
         d = Deferred()
+        if self._waiting is None:
+            self._waiting = []
         self._waiting.append(d)
         return d
 
     def startService(self):
         Service.startService(self)
-        self.ready = False
-        self._waiting = []
         self._registered = False
-
         self._timer_service = TimerService(
             self.check_interval, self._check_certs)
         self._timer_service.clock = self._clock
@@ -172,6 +171,8 @@ class AcmeIssuingService(Service):
 
     def stopService(self):
         Service.stopService(self)
+        self.ready = False
+        self._registered = False
         for d in self._waiting:
             d.cancel()
         self._waiting = []

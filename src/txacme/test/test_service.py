@@ -156,15 +156,6 @@ class AcmeIssuingServiceTests(TestCase):
     """
     Tests for `txacme.service.AcmeIssuingService`.
     """
-    def test_when_certs_valid_stopped(self):
-        """
-        ``when_certs_valid`` raises `RuntimeError` if called on a stopped
-        service.
-        """
-        service = self.useFixture(AcmeFixture()).service
-        with ExpectedException(RuntimeError, 'Service not started'):
-            service.when_certs_valid()
-
     def test_when_certs_valid_no_certs(self):
         """
         The deferred returned by ``when_certs_valid`` fires immediately if
@@ -213,11 +204,11 @@ class AcmeIssuingServiceTests(TestCase):
         """
         with fixture:
             service = fixture.service
+            d = service.when_certs_valid()
+            self.assertThat(d, has_no_result())
             service.startService()
             self.addCleanup(service.stopService)
-            self.assertThat(
-                service.when_certs_valid(),
-                succeeded(Is(None)))
+            self.assertThat(d, succeeded(Is(None)))
             max_expiry = fixture.now + service.panic_interval
             self.assertThat(
                 fixture.cert_store.as_dict(),
@@ -314,8 +305,9 @@ class AcmeIssuingServiceTests(TestCase):
         Test the starting and stopping behaviour.
         """
         with AcmeFixture(client=HangingClient()) as fixture:
-            fixture.service.startService()
             d = fixture.service.when_certs_valid()
+            self.assertThat(d, has_no_result())
+            fixture.service.startService()
             self.assertThat(d, has_no_result())
             fixture.service.stopService()
             self.assertThat(d, failed(Always()))
