@@ -155,8 +155,8 @@ class AcmeIssuingService(Service):
         attempted for any certificates within the panic threshold.
 
         ..  note:: The reissue for any of these certificates may not have been
-        successful; the panic callback will be invoked for any certificates in
-        the panic interval that failed reissue.
+            successful; the panic callback will be invoked for any certificates
+            in the panic interval that failed reissue.
 
         :rtype: ``Deferred``
         :return: A deferred that fires once the initial check has resolved.
