@@ -319,5 +319,21 @@ class AcmeIssuingServiceTests(TestCase):
         _default_panic(f, u'server_name')
         self.assertThat(flush_logged_errors(), Equals([f]))
 
+    @example(u'example.com')
+    @given(ts.dns_names())
+    def test_blank_cert(self, server_name):
+        """
+        An empty certificate file will be treated like an expired certificate.
+        """
+        with AcmeFixture(certs={server_name: []}) as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.service.when_certs_valid(),
+                succeeded(Always()))
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({server_name: Not(Equals([]))})))
+
 
 __all__ = ['AcmeIssuingServiceTests']

@@ -57,6 +57,8 @@ class AcmeIssuingService(Service):
             panicing = set()
             expiring = set()
             for server_name, objects in certs.items():
+                if len(objects) == 0:
+                    panicing.add(server_name)
                 for o in filter(lambda o: isinstance(o, Certificate), objects):
                     cert = x509.load_pem_x509_certificate(
                         o.as_bytes(), default_backend())
