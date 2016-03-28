@@ -16,7 +16,6 @@ from twisted.internet.defer import succeed
 from twisted.internet.endpoints import serverFromString
 from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
-from twisted.python.url import URL
 from twisted.trial.unittest import TestCase
 from twisted.web.resource import Resource
 from twisted.web.server import Site
@@ -25,14 +24,13 @@ from txsni.tlsendpoint import TLSEndpoint
 
 from txacme.challenges import TLSSNI01Responder
 from txacme.client import (
-    answer_tls_sni_01_challenge, Client, fqdn_identifier, poll_until_valid)
+    answer_tls_sni_01_challenge, Client, fqdn_identifier,
+    LETSENCRYPT_STAGING_DIRECTORY, poll_until_valid)
 from txacme.messages import CertificateRequest
 from txacme.testing import FakeClient, NullResponder
 from txacme.util import csr_for_names, generate_private_key, tap
 
 
-STAGING_DIRECTORY = URL.fromText(
-    u'https://acme-staging.api.letsencrypt.org/directory')
 HOST = u'acme-testing.mithrandi.net'
 
 
@@ -185,7 +183,7 @@ class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
 
     def _create_client(self, key):
         return (
-            Client.from_url(reactor, STAGING_DIRECTORY, key=key)
+            Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
             .addCallback(tap(
                 lambda client: self.addCleanup(
                     client._client._treq._agent._pool.closeCachedConnections)))

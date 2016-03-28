@@ -11,6 +11,7 @@ from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import maybeDeferred, succeed
 from twisted.internet.task import deferLater
+from twisted.python.url import URL
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
@@ -24,6 +25,14 @@ from txacme.logging import (
     LOG_JWS_GET, LOG_JWS_GET_NONCE, LOG_JWS_HEAD, LOG_JWS_POST,
     LOG_JWS_REQUEST, LOG_JWS_SIGN)
 from txacme.util import tap
+
+
+LETSENCRYPT_DIRECTORY = URL.fromText(
+    u'https://acme-v01.api.letsencrypt.org/')
+
+
+LETSENCRYPT_STAGING_DIRECTORY = URL.fromText(
+    u'https://acme-staging.api.letsencrypt.org/directory')
 
 
 # Borrowed from requests, with modifications.
@@ -845,4 +854,5 @@ __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
     'answer_tls_sni_01_challenge', 'poll_until_valid', 'NoSupportedChallenges',
-    'AuthorizationFailed', 'DER_CONTENT_TYPE']
+    'AuthorizationFailed', 'DER_CONTENT_TYPE', 'LETSENCRYPT_DIRECTORY',
+    'LETSENCRYPT_STAGING_DIRECTORY']
