@@ -2,7 +2,7 @@
 Utilities for testing with txacme.
 """
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 from acme import challenges, messages
@@ -15,7 +15,7 @@ from twisted.python.compat import unicode
 from zope.interface import implementer
 
 from txacme.interfaces import ICertificateStore, ITLSSNI01Responder
-from txacme.util import generate_private_key
+from txacme.util import clock_now, generate_private_key
 
 
 class FakeClient(object):
@@ -25,15 +25,21 @@ class FakeClient(object):
     """
     _challenge_types = [challenges.TLSSNI01]
 
-    def __init__(self, key, now=datetime.now, ca_key=None):
+    def __init__(self, key, clock, ca_key=None):
         self.key = key
-        self._now = now
+        self._clock = clock
         self._registered = False
         self._tos_agreed = None
         self._authorizations = {}
         self._challenges = {}
         self._ca_key = ca_key
         self._generate_ca_cert()
+
+    def _now(self):
+        """
+        Get the current time.
+        """
+        return clock_now(self._clock)
 
     def _generate_ca_cert(self):
         """

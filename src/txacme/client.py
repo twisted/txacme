@@ -95,6 +95,7 @@ class Client(object):
     """
     def __init__(self, directory, reactor, key, jws_client):
         self._client = jws_client
+        self._clock = reactor
         self.directory = directory
         self.key = key
 
@@ -365,7 +366,7 @@ class Client(object):
             raise errors.UnexpectedUpdate(challenge.uri)
         return challenge
 
-    def poll(self, authzr, _now=time.time):
+    def poll(self, authzr):
         """
         Update an authorization from the server (usually to check its status).
         """
@@ -383,7 +384,8 @@ class Client(object):
                         self._check_authorization, authzr.body.identifier)
                     .addCallback(
                         lambda authzr:
-                        (authzr, self.retry_after(res, _now=_now)))
+                        (authzr,
+                         self.retry_after(res, _now=self._clock.seconds)))
                 )
                 .addCallback(tap(
                     lambda a_r: action.add_success_fields(

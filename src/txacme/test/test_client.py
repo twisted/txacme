@@ -861,7 +861,7 @@ class ClientTests(TestCase):
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
             self.assertThat(
-                client.poll(authzr, _now=lambda: now),
+                client.poll(authzr),
                 succeeded(MatchesListwise([
                     MatchesStructure(
                         body=MatchesStructure(

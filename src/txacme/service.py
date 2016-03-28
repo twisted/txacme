@@ -13,7 +13,7 @@ from twisted.internet.defer import Deferred, gatherResults, succeed
 from twisted.logger import Logger
 
 from txacme.client import answer_tls_sni_01_challenge, poll_until_valid
-from txacme.util import csr_for_names, generate_private_key, tap
+from txacme.util import clock_now, csr_for_names, generate_private_key, tap
 
 
 log = Logger()
@@ -33,7 +33,6 @@ class AcmeIssuingService(Service):
     cert_store = attr.ib()
     _client = attr.ib()
     _clock = attr.ib()
-    _now = attr.ib()
     _tls_sni_01_responder = attr.ib()
     check_interval = attr.ib(default=24 * 60 * 60)  # default is 1 day
     reissue_interval = attr.ib(default=timedelta(days=30))
@@ -42,6 +41,12 @@ class AcmeIssuingService(Service):
     _generate_key = attr.ib(default=partial(generate_private_key, u'rsa'))
     _waiting = attr.ib(default=attr.Factory(list))
     ready = False
+
+    def _now(self):
+        """
+        Get the current time.
+        """
+        return clock_now(self._clock)
 
     def _check_certs(self):
         """

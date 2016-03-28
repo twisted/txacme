@@ -108,15 +108,16 @@ class AcmeFixture(Fixture):
     def _setUp(self):
         self.cert_store = MemoryStore(self._certs)
         self.clock = Clock()
+        self.clock.rightNow = (
+            self.now - datetime(1970, 1, 1)).total_seconds()
         if self.acme_client is None:
             self.acme_client = FakeClient(
-                RSA_KEY_512, now=lambda: self.now, ca_key=RSA_KEY_512_RAW)
+                RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW)
         self.responder = NullResponder()
         args = dict(
             cert_store=self.cert_store,
             client=self.acme_client,
             clock=self.clock,
-            now=lambda: self.now,
             tls_sni_01_responder=self.responder,
             panic_interval=self._panic_interval,
             panic=self._panic,
@@ -246,7 +247,6 @@ class AcmeIssuingServiceTests(TestCase):
                 fixture.cert_store.as_dict(),
                 succeeded(Equals(certs)))
 
-            fixture.now += timedelta(days=1.5)
             fixture.clock.advance(36 * 60 * 60)
             self.assertThat(
                 fixture.cert_store.as_dict(),
@@ -256,7 +256,6 @@ class AcmeIssuingServiceTests(TestCase):
                         u'example.org': Equals(certs[u'example.org']),
                         })))
 
-            fixture.now += timedelta(days=1.5)
             fixture.clock.advance(36 * 60 * 60)
             self.assertThat(
                 fixture.cert_store.as_dict(),
@@ -288,13 +287,11 @@ class AcmeIssuingServiceTests(TestCase):
                 fixture.service.when_certs_valid(),
                 succeeded(Is(None)))
 
-            fixture.now += timedelta(days=1.5)
-            fixture.clock.advance(24 * 60 * 60)
+            fixture.clock.advance(36 * 60 * 60)
             self.assertThat(flush_logged_errors(), HasLength(1))
             self.assertThat(panics, Equals([]))
 
-            fixture.now += timedelta(days=15)
-            fixture.clock.advance(24 * 60 * 60)
+            fixture.clock.advance(15 * 24 * 60 * 60)
             self.assertThat(
                 panics,
                 MatchesListwise([

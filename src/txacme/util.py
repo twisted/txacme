@@ -155,7 +155,19 @@ def csr_for_names(names, key):
         .sign(key, hashes.SHA256(), default_backend()))
 
 
+def clock_now(clock):
+    """
+    Get a datetime representing the current time.
+
+    :param clock: An ``IReactorTime` provider.
+
+    :rtype: `~datetime.datetime`
+    :return: A datetime representing the current time.
+    """
+    return datetime.utcfromtimestamp(clock.seconds())
+
+
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
     'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap',
-    'encode_csr', 'decode_csr', 'csr_for_names']
+    'encode_csr', 'decode_csr', 'csr_for_names', 'clock_now']
