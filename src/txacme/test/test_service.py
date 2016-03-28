@@ -309,6 +309,9 @@ class AcmeIssuingServiceTests(TestCase):
 
     @run_test_with(AsynchronousDeferredRunTest)
     def test_default_panic(self):
+        """
+        The default panic callback logs a message via ``twisted.logger``.
+        """
         try:
             1 / 0
         except:
