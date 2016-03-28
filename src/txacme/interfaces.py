@@ -39,4 +39,44 @@ class ITLSSNI01Responder(Interface):
         """
 
 
-__all__ = ['ITLSSNI01Responder']
+class ICertificateStore(Interface):
+    """
+    A store of certificate/keys/chains.
+    """
+    def get(self, server_name):
+        """
+        Retrieve the current PEM objects for the given server name.
+
+        :param str server_name: The server name.
+
+        :raises KeyError: if the given name does not exist in the store.
+
+        :return: ``Deferred[List[:ref:`pem-objects`]]``
+        """
+
+    def store(self, server_name, pem_objects):
+        """
+        Store PEM objects for the given server name.
+
+        Implementations do not have to permit invoking this with a server name
+        that was not already present in the store.
+
+        :param str server_name: The server name to update.
+        :param pem_objects: A list of :ref:`pem-objects`; must contain exactly
+            one private key, a certificate corresponding to that private key,
+            and zero or more chain certificates.
+
+        :rtype: ``Deferred``
+        """
+
+    def as_dict(self):
+        """
+        Get all certificates in the store.
+
+        :rtype: ``Deferred[Dict[str, List[:ref:`pem-objects`]]]``
+        :return: A deferred firing with a dict mapping server names to
+                 :ref:`pem-objects`.
+        """
+
+
+__all__ = ['ITLSSNI01Responder', 'ICertificateStore']

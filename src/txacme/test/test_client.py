@@ -1,5 +1,4 @@
 import json
-import time
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
@@ -147,8 +146,9 @@ class ClientFixture(Fixture):
             agent=RequestTraversalAgent(
                 StringStubbingResource(self._sequence)),
             data_to_body_producer=_SynchronousProducer)
+        self.clock = Clock()
         self.client = Client(
-            self._directory, reactor, self._key,
+            self._directory, self.clock, self._key,
             jws_client=JWSClient(treq_client, self._key, self._alg))
 
 
@@ -795,25 +795,25 @@ class ClientTests(TestCase):
                     body=messages.ChallengeBody(chall=None, uri=url1)),
                 messages.ChallengeBody(chall=None, uri=url2))
 
-    @example(name=u'example.com', retry_after=60, date_string=False)
-    @example(name=u'example.org', retry_after=60, date_string=True)
-    @given(name=ts.dns_names(),
-           retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
+    @example(now=1459184402., name=u'example.com', retry_after=60,
+             date_string=False)
+    @example(now=1459184402., name=u'example.org', retry_after=60,
+             date_string=True)
+    @given(now=s.floats(min_value=0., max_value=2147483648.),
+           name=ts.dns_names(),
+           retry_after=s.none() | s.integers(min_value=0, max_value=1000),
            date_string=s.booleans())
-    def test_poll(self, name, retry_after, date_string):
+    def test_poll(self, now, name, retry_after, date_string):
         """
         `~txacme.client.Client.poll` retrieves the latest state of an
         authorization resource, as well as the minimum time to wait before
         polling the state again.
         """
-        now = time.time()
         if retry_after is None:
             retry_after_encoded = None
             retry_after = 5
         elif date_string:
-            retry_after /= 1000.
-            retry_after_encoded = http.datetimeToString(retry_after)
-            retry_after = retry_after - now
+            retry_after_encoded = http.datetimeToString(retry_after + now)
         else:
             retry_after_encoded = u'{}'.format(retry_after).encode('ascii')
         identifier_json = {u'type': u'dns',
@@ -857,11 +857,13 @@ class ClientTests(TestCase):
                    u'combinations': [[0], [1]],
                })))],
             self.expectThat)
-        client = self.useFixture(
-            ClientFixture(sequence, key=RSA_KEY_512)).client
+        fixture = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512))
+        fixture.clock.rightNow = now
+        client = fixture.client
         with sequence.consume(self.fail):
             self.assertThat(
-                client.poll(authzr, _now=lambda: now),
+                client.poll(authzr),
                 succeeded(MatchesListwise([
                     MatchesStructure(
                         body=MatchesStructure(

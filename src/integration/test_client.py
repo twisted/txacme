@@ -214,7 +214,7 @@ class FakeClientTests(ClientTestsMixin, TestCase):
     HOST = u'example.com'
 
     def _create_client(self, key):
-        return succeed(FakeClient(key))
+        return succeed(FakeClient(key, reactor))
 
     def _create_responder(self):
         return succeed(NullResponder())

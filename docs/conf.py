@@ -308,6 +308,8 @@ intersphinx_mapping = {
                 (None, 'twisted-objects.inv')),
     'cryptography': ('https://cryptography.io/en/latest/',
                      (None, 'cryptography-objects.inv')),
+    'pem': ('https://pem.readthedocs.org/en/stable/',
+            (None, 'pem-objects.inv')),
     }
 
 nitpick_ignore = [('py:class', 'testtools.testcase.TestCase')]

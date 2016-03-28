@@ -2,7 +2,7 @@
 Utilities for testing with txacme.
 """
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 from acme import challenges, messages
@@ -10,12 +10,12 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
-from twisted.internet.defer import succeed
+from twisted.internet.defer import fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
-from txacme.interfaces import ITLSSNI01Responder
-from txacme.util import generate_private_key
+from txacme.interfaces import ICertificateStore, ITLSSNI01Responder
+from txacme.util import clock_now, generate_private_key
 
 
 class FakeClient(object):
@@ -25,20 +25,28 @@ class FakeClient(object):
     """
     _challenge_types = [challenges.TLSSNI01]
 
-    def __init__(self, key, now=datetime.now):
+    def __init__(self, key, clock, ca_key=None):
         self.key = key
-        self._now = now
+        self._clock = clock
         self._registered = False
         self._tos_agreed = None
         self._authorizations = {}
         self._challenges = {}
+        self._ca_key = ca_key
         self._generate_ca_cert()
+
+    def _now(self):
+        """
+        Get the current time.
+        """
+        return clock_now(self._clock)
 
     def _generate_ca_cert(self):
         """
         Generate a CA cert/key.
         """
-        self._ca_key = generate_private_key(u'rsa')
+        if self._ca_key is None:
+            self._ca_key = generate_private_key(u'rsa')
         self._ca_name = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, u'ACME Snake Oil CA')])
         self._ca_cert = (
@@ -60,15 +68,17 @@ class FakeClient(object):
                 private_key=self._ca_key,
                 algorithm=hashes.SHA256(),
                 backend=default_backend()))
+        self._ca_aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(
+            self._ca_key.public_key())
 
     def register(self, new_reg=None):
         self._registered = True
         if new_reg is None:
             new_reg = messages.NewRegistration()
         self.regr = messages.RegistrationResource(
-                body=messages.Registration(
-                    contact=new_reg.contact,
-                    agreement=new_reg.agreement))
+            body=messages.Registration(
+                contact=new_reg.contact,
+                agreement=new_reg.agreement))
         return succeed(self.regr)
 
     def agree_to_tos(self, regr):
@@ -138,10 +148,7 @@ class FakeClient(object):
             .add_extension(
                 x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
                 critical=False)
-            .add_extension(
-                x509.AuthorityKeyIdentifier.from_issuer_public_key(
-                    self._ca_key.public_key()),
-                critical=False)
+            .add_extension(self._ca_aki, critical=False)
             .sign(
                 private_key=self._ca_key,
                 algorithm=hashes.SHA256(),
@@ -169,4 +176,29 @@ class NullResponder(object):
         pass
 
 
-__all__ = ['FakeClient', 'NullResponder']
+@implementer(ICertificateStore)
+class MemoryStore(object):
+    """
+    A certificate store that keeps certificates in memory only.
+    """
+    def __init__(self, certs=None):
+        if certs is None:
+            self._store = {}
+        else:
+            self._store = dict(certs)
+
+    def get(self, server_name):
+        try:
+            return succeed(self._store[server_name])
+        except KeyError:
+            return fail()
+
+    def store(self, server_name, pem_objects):
+        self._store[server_name] = pem_objects
+        return succeed(None)
+
+    def as_dict(self):
+        return succeed(self._store)
+
+
+__all__ = ['FakeClient', 'MemoryStore', 'NullResponder']
