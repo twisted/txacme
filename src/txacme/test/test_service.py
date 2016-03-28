@@ -94,11 +94,9 @@ class AcmeFixture(Fixture):
     """
     A fixture for setting up an `~txacme.service.AcmeIssuingService`.
     """
-    def __init__(self, now=None, certs=None, panic_interval=None, panic=None,
-                 client=None):
+    def __init__(self, now=datetime(2000, 1, 1, 0, 0, 0), certs=None,
+                 panic_interval=None, panic=None, client=None):
         super(AcmeFixture, self).__init__()
-        if now is None:
-            now = datetime(2000, 1, 1, 0, 0, 0)
         self.now = now
         self._certs = certs
         self._panic_interval = panic_interval
@@ -111,12 +109,14 @@ class AcmeFixture(Fixture):
         self.clock.rightNow = (
             self.now - datetime(1970, 1, 1)).total_seconds()
         if self.acme_client is None:
-            self.acme_client = FakeClient(
+            acme_client = FakeClient(
                 RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW)
+        else:
+            acme_client = self.acme_client
         self.responder = NullResponder()
         args = dict(
             cert_store=self.cert_store,
-            client=self.acme_client,
+            client=acme_client,
             clock=self.clock,
             tls_sni_01_responder=self.responder,
             panic_interval=self._panic_interval,
