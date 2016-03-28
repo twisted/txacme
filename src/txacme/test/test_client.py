@@ -874,7 +874,7 @@ class ClientTests(TestCase):
                             status=Equals(messages.STATUS_INVALID)),
                         new_cert_uri=Equals(
                             u'https://example.org/acme/new-cert')),
-                    Nearly(retry_after, 0.1),
+                    Nearly(retry_after, 1.0),
                 ])))
 
     def test_tls_sni_01_no_singleton(self):
