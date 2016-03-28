@@ -159,7 +159,7 @@ def clock_now(clock):
     """
     Get a datetime representing the current time.
 
-    :param clock: An ``IReactorTime` provider.
+    :param clock: An ``IReactorTime`` provider.
 
     :rtype: `~datetime.datetime`
     :return: A datetime representing the current time.
