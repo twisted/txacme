@@ -34,7 +34,6 @@ class FakeClient(object):
         self._challenges = {}
         self._ca_key = ca_key
         self._generate_ca_cert()
-        self._ski_cache = {}
 
     def _generate_ca_cert(self):
         """
