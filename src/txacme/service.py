@@ -145,10 +145,13 @@ class AcmeIssuingService(Service):
         """
         Get a notification once all certificates are valid.
 
-        When the service starts, an initial check is made for certs that are
-        already inside the panic threshold; the deferred returned by this
-        function will only fire once reissue has been attempted for any such
-        certificates.
+        When the service starts, an initial check is made immediately; the
+        deferred returned by this function will only fire once reissue has been
+        attempted for any certificates within the panic threshold.
+
+        ..  note:: The reissue for any of these certificates may not have been
+        successful; the panic callback will be invoked for any certificates in
+        the panic interval that failed reissue.
 
         :rtype: ``Deferred``
         :return: A deferred that fires once the initial check has resolved.
