@@ -798,7 +798,7 @@ class ClientTests(TestCase):
     @example(name=u'example.com', retry_after=60, date_string=False)
     @example(name=u'example.org', retry_after=60, date_string=True)
     @given(name=ts.dns_names(),
-           retry_after=s.none() | s.integers(min_value=0, max_value=1000000),
+           retry_after=s.none() | s.integers(min_value=0, max_value=1000),
            date_string=s.booleans())
     def test_poll(self, name, retry_after, date_string):
         """
@@ -874,7 +874,7 @@ class ClientTests(TestCase):
                             status=Equals(messages.STATUS_INVALID)),
                         new_cert_uri=Equals(
                             u'https://example.org/acme/new-cert')),
-                    Nearly(retry_after, 1.0),
+                    Nearly(retry_after, 0.1),
                 ])))
 
     def test_tls_sni_01_no_singleton(self):
