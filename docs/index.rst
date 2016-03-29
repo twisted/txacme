@@ -41,7 +41,7 @@ appropriate certificate will be selected based on the servername that the
 client sends by SNI, so ancient clients that do not perform SNI will not be
 able to connect.
 
-In the event where you do not have an existing certificate and wish to issue
+In the event that you do not have an existing certificate and wish to issue
 one, simply place a blank file of the appropriate name in the certificate
 directory. This will be treated the same way as an expired certificate, and a
 new certificate will then be issued on startup. For example::
