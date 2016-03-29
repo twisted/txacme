@@ -41,7 +41,7 @@ def _parse_header_links(response):
     """
     Parse the links from a Link: header field.
 
-    ..  todo: Links with the same relation collide at the moment.
+    ..  todo:: Links with the same relation collide at the moment.
 
     :param bytes value: The header value.
 
@@ -424,8 +424,8 @@ class Client(object):
 
         ..  seealso:: `txacme.util.csr_for_names`
 
-        ..  todo: Delayed issuance is not currently supported, the server must
-                  issue the requested certificate immediately.
+        ..  todo:: Delayed issuance is not currently supported, the server must
+                   issue the requested certificate immediately.
 
         :param csr: A certificate request message: normally
             `txacme.messages.CertificateRequest` or

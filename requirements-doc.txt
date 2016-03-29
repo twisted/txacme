@@ -1,2 +1,4 @@
 .[test]
 sphinx
+sphinx_rtd_theme
+git+https://github.com/repoze/repoze.sphinx.autointerface#egg=repoze.sphinx.autointerface
