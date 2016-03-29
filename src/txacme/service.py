@@ -61,7 +61,7 @@ class AcmeIssuingService(Service):
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
     _generate_key = attr.ib(default=partial(generate_private_key, u'rsa'))
-    _waiting = attr.ib(default=attr.Factory(list), init=False)
+    _waiting = attr.ib(default=attr.Factory(list))
     ready = False
 
     def _now(self):
