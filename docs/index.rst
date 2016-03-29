@@ -11,7 +11,7 @@ API entry points
 There are several possible starting points for making use of txacme.
 
 
-String endpoint parser
+Server endpoint string
 ~~~~~~~~~~~~~~~~~~~~~~
 
 .. todo:: None of the stuff in this section actually exists yet.
@@ -28,7 +28,7 @@ certificates in, and the underlying endpoint to listen on.
 
 A typical example::
 
-  twistd -n web -p lets:/srv/www/certs:tcp:443 --path /srv/www/root
+  twistd -n web --port lets:/srv/www/certs:tcp:443 --path /srv/www/root
 
 .. note:: The certificate directory must be writable by the user your
    application is running as.
@@ -49,14 +49,14 @@ new certificate will then be issued on startup. For example::
   touch /srv/www/certs/example.com.pem
 
 .. note:: This endpoint uses the ``tls-sni-01`` challenge type to perform
-   authorization for your domains; this requires that your server is reachable
+   authorization for your domains; this requires that the endpoint is reachable
    on port 443 for those domains (the actual port you listen on can be
    different, as long as you are forwarding port 443 connections to your
    listening port).
 
    If you have multiple applications, you can share a certificate directory
-   between them, using ``le:`` on the application running on port 443 to keep
-   the certificates up to date, and ``txsni:`` on the other applications to
+   between them, using ``le:`` for the application running on port 443 to keep
+   the certificates up to date, and ``txsni:`` for the other applications to
    make use of the same certificates.
 
 At startup, and periodically (every 24 hours), a check will be performed for
@@ -66,8 +66,8 @@ check. If a certificate will expire in less than 15 days' time, and reissue
 fails, a message will be logged at *CRITICAL* level.
 
 
-Stream server endpoint
-~~~~~~~~~~~~~~~~~~~~~~
+Server endpoint API
+~~~~~~~~~~~~~~~~~~~
 
 If you need to customize the behaviour of the endpoint, or you are not using
 endpoint strings, instantiating the endpoint directly is quite simple.
