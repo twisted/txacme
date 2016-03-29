@@ -21,7 +21,7 @@ from txacme.util import clock_now, generate_private_key
 class FakeClient(object):
     """
     Provides the same API as `~txacme.client.Client`, but performs no network
-    operations and issues self-signed certificates.
+    operations and issues certificates signed by its own fake CA.
     """
     _challenge_types = [challenges.TLSSNI01]
 
