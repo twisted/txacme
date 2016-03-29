@@ -33,7 +33,7 @@ class AcmeIssuingService(Service):
     :param .ICertificateStore cert_store: The certificate store containing the
         certificates to manage.
     :param ~txacme.client.Client client: The ACME client to use.  Typically
-        constructed with `~txacme.client.Client.from_url`.
+        constructed with `Client.from_url <txacme.client.Client.from_url>`.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
     :param .ITLSSNI01Responder responder: Responder for ``tls-sni-01``
