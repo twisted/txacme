@@ -11,6 +11,7 @@ from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import maybeDeferred, succeed
 from twisted.internet.task import deferLater
+from twisted.python.url import URL
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
@@ -26,13 +27,21 @@ from txacme.logging import (
 from txacme.util import tap
 
 
+LETSENCRYPT_DIRECTORY = URL.fromText(
+    u'https://acme-v01.api.letsencrypt.org/')
+
+
+LETSENCRYPT_STAGING_DIRECTORY = URL.fromText(
+    u'https://acme-staging.api.letsencrypt.org/directory')
+
+
 # Borrowed from requests, with modifications.
 
 def _parse_header_links(response):
     """
     Parse the links from a Link: header field.
 
-    ..  todo: Links with the same relation collide at the moment.
+    ..  todo:: Links with the same relation collide at the moment.
 
     :param bytes value: The header value.
 
@@ -106,6 +115,9 @@ class Client(object):
 
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
         :param reactor: The Twisted reactor to use.
+        :param ~acme.jose.jwk.JWK key: The client key to use.
+        :param alg: The signing algorithm to use.  Needs to be compatible with
+            the type of key used.
         :param JWSClient jws_client: The underlying client to use, or ``None``
             to construct one.
 
@@ -415,8 +427,8 @@ class Client(object):
 
         ..  seealso:: `txacme.util.csr_for_names`
 
-        ..  todo: Delayed issuance is not currently supported, the server must
-                  issue the requested certificate immediately.
+        ..  todo:: Delayed issuance is not currently supported, the server must
+                   issue the requested certificate immediately.
 
         :param csr: A certificate request message: normally
             `txacme.messages.CertificateRequest` or
@@ -845,4 +857,5 @@ __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
     'answer_tls_sni_01_challenge', 'poll_until_valid', 'NoSupportedChallenges',
-    'AuthorizationFailed', 'DER_CONTENT_TYPE']
+    'AuthorizationFailed', 'DER_CONTENT_TYPE', 'LETSENCRYPT_DIRECTORY',
+    'LETSENCRYPT_STAGING_DIRECTORY']

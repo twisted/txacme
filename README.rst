@@ -16,16 +16,18 @@ txacme: A Twisted implementation of the ACME protocol
 
 .. teaser-begin
 
-`ACME`_ is Automatic Certificate Management Environment, a protocol that allows a
-client and certificate authority to automate verification and certificate
-issuance. The ACME protocol is used by the free `Let's Encrypt`_ Certificate Authority.
+`ACME`_ is Automatic Certificate Management Environment, a protocol that allows
+a client and certificate authority to automate verification and certificate
+issuance. The ACME protocol is used by the free `Let's Encrypt`_ Certificate
+Authority.
 
-``txacme`` is an implementation of the protocol for `Twisted`_, the event-driven
-networking engine for Python.
+``txacme`` is an implementation of the protocol for `Twisted`_, the
+event-driven networking engine for Python.
 
-``txacme`` is still under heavy development, and currently only an implementation
-of the client side of the protocol is planned; if you are interested in
-implementing or have need of the server side, please get in touch!
+``txacme`` is still under heavy development, and currently only an
+implementation of the client side of the protocol is planned; if you are
+interested in implementing or have need of the server side, please get in
+touch!
 
 ``txacme``\ ’s documentation lives at `Read the Docs`_, the code on `GitHub`_.
 It’s rigorously tested on Python 2.7, 3.4+, and PyPy.

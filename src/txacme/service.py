@@ -25,16 +25,41 @@ def _default_panic(failure, server_name):
         failure, server_name=server_name)
 
 
-@attr.s
+@attr.s(cmp=False, hash=False)
 class AcmeIssuingService(Service):
     """
     A service for keeping certificates up to date by using an ACME server.
+
+    :param .ICertificateStore cert_store: The certificate store containing the
+        certificates to manage.
+    :param ~txacme.client.Client client: The ACME client to use.  Typically
+        constructed with `Client.from_url <txacme.client.Client.from_url>`.
+    :param clock: ``IReactorTime`` provider; usually the reactor, when not
+        testing.
+    :param .ITLSSNI01Responder tls_sni_01_responder: Responder for
+        ``tls-sni-01`` challenges.
+    :param ~datetime.timedelta check_interval: How often to check for expiring
+        certificates.
+    :param ~datetime.timedelta reissue_interval: If a certificate is expiring
+        in less time than this interval, it will be reissued.
+    :param ~datetime.timedelta panic_interval: If a certificate is expiring in
+        less time than this interval, and reissuing fails, the panic callback
+        will be invoked.
+
+    :type panic: Callable[[Failure, `str`], Deferred]
+    :param panic: A callable invoked with the failure and server name when
+        reissuing fails for a certificate expiring in the ``panic_interval``.
+        For example, you could generate a monitoring alert.  The default
+        callback logs a message at *CRITICAL* level.
+    :param generate_key: A 0-arg callable used to generate a private key for a
+        new cert.  Normally you would not pass this unless you have specialized
+        key generation requirements.
     """
     cert_store = attr.ib()
     _client = attr.ib()
     _clock = attr.ib()
     _tls_sni_01_responder = attr.ib()
-    check_interval = attr.ib(default=24 * 60 * 60)  # default is 1 day
+    check_interval = attr.ib(default=timedelta(days=1))
     reissue_interval = attr.ib(default=timedelta(days=30))
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
@@ -57,6 +82,8 @@ class AcmeIssuingService(Service):
             panicing = set()
             expiring = set()
             for server_name, objects in certs.items():
+                if len(objects) == 0:
+                    panicing.add(server_name)
                 for o in filter(lambda o: isinstance(o, Certificate), objects):
                     cert = x509.load_pem_x509_certificate(
                         o.as_bytes(), default_backend())
@@ -148,11 +175,11 @@ class AcmeIssuingService(Service):
 
     def when_certs_valid(self):
         """
-        Get a notification once all certificates are valid.
+        Get a notification once the startup check has completed.
 
         When the service starts, an initial check is made immediately; the
         deferred returned by this function will only fire once reissue has been
-        attempted for any certificates within the panic threshold.
+        attempted for any certificates within the panic interval.
 
         ..  note:: The reissue for any of these certificates may not have been
             successful; the panic callback will be invoked for any certificates
@@ -171,7 +198,7 @@ class AcmeIssuingService(Service):
         Service.startService(self)
         self._registered = False
         self._timer_service = TimerService(
-            self.check_interval, self._check_certs)
+            self.check_interval.total_seconds(), self._check_certs)
         self._timer_service.clock = self._clock
         self._timer_service.startService()
 

@@ -18,10 +18,10 @@ class ITLSSNI01Responder(Interface):
 
         ..  seealso:: `txacme.util.generate_tls_sni_01_cert`
 
-        :param str server_name: The server name to respond to: ie.
-            `u'<hex>.<hex>.acme.invalid'`.
+        :param str server_name: The server name to respond for: ie.
+            ``u'<hex>.<hex>.acme.invalid'``.
 
-        :rtype: `~twisted.internet.defer.Deferred`
+        :rtype: ``Deferred``
         :return: A deferred firing when the given hostname is ready to respond
                  with the given authorization.
         """
@@ -35,7 +35,7 @@ class ITLSSNI01Responder(Interface):
         being called.
 
         :param str server_name: The server name to stop responding for: ie.
-            `u'<hex>.<hex>.acme.invalid'`.
+            ``u'<hex>.<hex>.acme.invalid'``.
         """
 
 

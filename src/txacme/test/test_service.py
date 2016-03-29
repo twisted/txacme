@@ -124,6 +124,8 @@ class AcmeFixture(Fixture):
             generate_key=lambda: RSA_KEY_512_RAW)
         self.service = AcmeIssuingService(
             **{k: v for k, v in args.items() if v is not None})
+        self.addCleanup(
+            lambda: self.service.running and self.service.stopService())
 
 
 @s.composite
@@ -165,7 +167,6 @@ class AcmeIssuingServiceTests(TestCase):
         """
         service = self.useFixture(AcmeFixture()).service
         service.startService()
-        self.addCleanup(service.stopService)
         self.assertThat(
             service.when_certs_valid(),
             succeeded(Is(None)))
@@ -193,7 +194,6 @@ class AcmeIssuingServiceTests(TestCase):
         with AcmeFixture(now=now, certs=certs) as fixture:
             service = fixture.service
             service.startService()
-            self.addCleanup(service.stopService)
             self.assertThat(
                 service.when_certs_valid(),
                 succeeded(Is(None)))
@@ -209,7 +209,6 @@ class AcmeIssuingServiceTests(TestCase):
             d = service.when_certs_valid()
             self.assertThat(d, has_no_result())
             service.startService()
-            self.addCleanup(service.stopService)
             self.assertThat(d, succeeded(Is(None)))
             max_expiry = fixture.now + service.panic_interval
             self.assertThat(
@@ -239,7 +238,6 @@ class AcmeIssuingServiceTests(TestCase):
             }
         with AcmeFixture(now=now, certs=certs) as fixture:
             fixture.service.startService()
-            self.addCleanup(fixture.service.stopService)
             self.assertThat(
                 fixture.service.when_certs_valid(),
                 succeeded(Is(None)))
@@ -282,7 +280,6 @@ class AcmeIssuingServiceTests(TestCase):
         with AcmeFixture(now=now, certs=certs,
                          panic=lambda *a: panics.append(a)) as fixture:
             fixture.service.startService()
-            self.addCleanup(fixture.service.stopService)
             self.assertThat(
                 fixture.service.when_certs_valid(),
                 succeeded(Is(None)))
@@ -312,12 +309,31 @@ class AcmeIssuingServiceTests(TestCase):
 
     @run_test_with(AsynchronousDeferredRunTest)
     def test_default_panic(self):
+        """
+        The default panic callback logs a message via ``twisted.logger``.
+        """
         try:
             1 / 0
         except:
             f = Failure()
         _default_panic(f, u'server_name')
         self.assertThat(flush_logged_errors(), Equals([f]))
+
+    @example(u'example.com')
+    @given(ts.dns_names())
+    def test_blank_cert(self, server_name):
+        """
+        An empty certificate file will be treated like an expired certificate.
+        """
+        with AcmeFixture(certs={server_name: []}) as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.service.when_certs_valid(),
+                succeeded(Always()))
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({server_name: Not(Equals([]))})))
 
 
 __all__ = ['AcmeIssuingServiceTests']
