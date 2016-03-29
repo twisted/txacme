@@ -115,7 +115,7 @@ class Client(object):
 
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
         :param reactor: The Twisted reactor to use.
-        :param `~acme.jose.JWK` key: The client key to use.
+        :param ~acme.jose.jwk.JWK key: The client key to use.
         :param alg: The signing algorithm to use.  Needs to be compatible with
             the type of key used.
         :param JWSClient jws_client: The underlying client to use, or ``None``
