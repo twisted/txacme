@@ -36,8 +36,8 @@ class AcmeIssuingService(Service):
         constructed with `Client.from_url <txacme.client.Client.from_url>`.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
-    :param .ITLSSNI01Responder responder: Responder for ``tls-sni-01``
-        challenges.
+    :param .ITLSSNI01Responder tls_sni_01_responder: Responder for
+        ``tls-sni-01`` challenges.
     :param int check_seconds: How often to check for expiring certificates, in
         seconds.
     :param ~datetime.timedelta reissue_interval: If a certificate is expiring
