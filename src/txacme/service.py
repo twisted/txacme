@@ -38,8 +38,8 @@ class AcmeIssuingService(Service):
         testing.
     :param .ITLSSNI01Responder tls_sni_01_responder: Responder for
         ``tls-sni-01`` challenges.
-    :param int check_seconds: How often to check for expiring certificates, in
-        seconds.
+    :param ~datetime.timedelta check_interval: How often to check for expiring
+        certificates.
     :param ~datetime.timedelta reissue_interval: If a certificate is expiring
         in less time than this interval, it will be reissued.
     :param ~datetime.timedelta panic_interval: If a certificate is expiring in
@@ -59,7 +59,7 @@ class AcmeIssuingService(Service):
     _client = attr.ib()
     _clock = attr.ib()
     _tls_sni_01_responder = attr.ib()
-    check_seconds = attr.ib(default=24 * 60 * 60)  # default is 1 day
+    check_interval = attr.ib(default=timedelta(days=1))
     reissue_interval = attr.ib(default=timedelta(days=30))
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
@@ -198,7 +198,7 @@ class AcmeIssuingService(Service):
         Service.startService(self)
         self._registered = False
         self._timer_service = TimerService(
-            self.check_seconds, self._check_certs)
+            self.check_interval.total_seconds(), self._check_certs)
         self._timer_service.clock = self._clock
         self._timer_service.startService()
 
