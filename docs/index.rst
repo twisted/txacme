@@ -28,7 +28,7 @@ certificates in, and the underlying endpoint to listen on.
 
 A typical example::
 
-  lets:/srv/www/certs:tcp:443
+  twistd -n web -p lets:/srv/www/certs:tcp:443 --path /srv/www/root
 
 .. note:: The certificate directory must be writable by the user your
    application is running as.
