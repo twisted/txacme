@@ -50,14 +50,12 @@ new certificate will then be issued on startup. For example::
 
 .. note:: This endpoint uses the ``tls-sni-01`` challenge type to perform
    authorization for your domains; this requires that the endpoint is reachable
-   on port 443 for those domains (the actual port you listen on can be
-   different, as long as you are forwarding port 443 connections to your
-   listening port).
+   on port 443 for those domains (possibly via port forwarding).
 
-   If you have multiple applications, you can share a certificate directory
-   between them, using ``le:`` for the application running on port 443 to keep
-   the certificates up to date, and ``txsni:`` for the other applications to
-   make use of the same certificates.
+.. note:: If you have multiple applications, you can share a certificate
+   directory between them, using ``le:`` for the application running on port
+   443 to keep the certificates up to date, and ``txsni:`` for the other
+   applications to make use of the same certificates.
 
 At startup, and periodically (every 24 hours), a check will be performed for
 expiring certificates; if a certificate will expire in less than 30 days' time,
