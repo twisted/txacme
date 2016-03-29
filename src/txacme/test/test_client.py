@@ -19,8 +19,7 @@ from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
-    _SynchronousProducer, HasHeaders, RequestTraversalAgent,
-    StringStubbingResource)
+    _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import reactor
 from twisted.internet.defer import CancelledError, fail, maybeDeferred, succeed
 from twisted.internet.task import Clock
@@ -167,7 +166,8 @@ def _nonce_response(url, nonce):
             Equals(b'HEAD'),
             Equals(url),
             Equals({}),
-            Equals(HasHeaders({b'user-agent': [b'txacme']})),
+            ContainsDict({b'User-Agent':
+                          MatchesListwise([StartsWith(b'txacme/')])}),
             Equals(b'')]),
         (http.NOT_ALLOWED,
          {b'content-type': JSON_CONTENT_TYPE,

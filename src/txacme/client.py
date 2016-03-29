@@ -16,6 +16,7 @@ from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
 
+from txacme import __version__
 from txacme.logging import (
     LOG_ACME_ANSWER_CHALLENGE, LOG_ACME_CONSUME_DIRECTORY,
     LOG_ACME_CREATE_AUTHORIZATION, LOG_ACME_FETCH_CHAIN,
@@ -642,7 +643,8 @@ class JWSClient(object):
     """
     timeout = 30
 
-    def __init__(self, treq_client, key, alg, user_agent=b'txacme'):
+    def __init__(self, treq_client, key, alg,
+                 user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
         self._treq = treq_client
         self._key = key
         self._alg = alg
