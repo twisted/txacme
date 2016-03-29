@@ -29,6 +29,26 @@ def _default_panic(failure, server_name):
 class AcmeIssuingService(Service):
     """
     A service for keeping certificates up to date by using an ACME server.
+
+    :param .ICertificateStore cert_store: The certificate store containing the
+        certificates to manage.
+    :param ~txacme.client.Client client: The ACME client to use.  Typically
+        constructed with `~txacme.client.Client.from_url`.
+    :param clock: ``IReactorTime`` provider; usually the reactor, when not
+        testing.
+    :param .ITLSSNI01Responder responder: Responder for ``tls-sni-01``
+        challenges.
+    :param int check_interval: How often to check for expiring certificates, in
+        seconds.
+    :param ~datetime.timedelta reissue_interval: If a certificate is expiring
+        in less time than this interval, it will be reissued.
+    :param ~datetime.timedelta panic_interval: If a certificate is expiring in
+        less time than this interval, and reissuing fails, the panic callback
+        will be invoked.
+    :param panic: A callable invoked with the failure and server name when
+        reissuing fails for a certificate expiring in the ``panic_interval``.
+        For example, you could generate a monitoring alert.  The default
+        callback logs a message at *CRITICAL* level.
     """
     cert_store = attr.ib()
     _client = attr.ib()
