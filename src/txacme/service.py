@@ -25,7 +25,7 @@ def _default_panic(failure, server_name):
         failure, server_name=server_name)
 
 
-@attr.s
+@attr.s(cmp=False, hash=False)
 class AcmeIssuingService(Service):
     """
     A service for keeping certificates up to date by using an ACME server.
@@ -61,7 +61,7 @@ class AcmeIssuingService(Service):
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
     _generate_key = attr.ib(default=partial(generate_private_key, u'rsa'))
-    _waiting = attr.ib(default=attr.Factory(list))
+    _waiting = attr.ib(default=attr.Factory(list), init=False)
     ready = False
 
     def _now(self):
