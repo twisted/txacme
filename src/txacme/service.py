@@ -46,14 +46,14 @@ class AcmeIssuingService(Service):
         less time than this interval, and reissuing fails, the panic callback
         will be invoked.
 
-    :type panic: ``Callable[[Failure, str], Deferred]``
+    :type panic: Callable[[Failure, `str`], Deferred]
     :param panic: A callable invoked with the failure and server name when
         reissuing fails for a certificate expiring in the ``panic_interval``.
         For example, you could generate a monitoring alert.  The default
         callback logs a message at *CRITICAL* level.
-    :param generate_key: A 0-arg callable that generates a new private key.
-        Normally you would not pass this unless you have specialized key
-        generation requirements.
+    :param generate_key: A 0-arg callable used to generate a private key for a
+        new cert.  Normally you would not pass this unless you have specialized
+        key generation requirements.
     """
     cert_store = attr.ib()
     _client = attr.ib()
