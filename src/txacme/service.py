@@ -38,13 +38,15 @@ class AcmeIssuingService(Service):
         testing.
     :param .ITLSSNI01Responder responder: Responder for ``tls-sni-01``
         challenges.
-    :param int check_interval: How often to check for expiring certificates, in
+    :param int check_seconds: How often to check for expiring certificates, in
         seconds.
     :param ~datetime.timedelta reissue_interval: If a certificate is expiring
         in less time than this interval, it will be reissued.
     :param ~datetime.timedelta panic_interval: If a certificate is expiring in
         less time than this interval, and reissuing fails, the panic callback
         will be invoked.
+
+    :type panic: ``Callable[[Failure, str], Deferred]``
     :param panic: A callable invoked with the failure and server name when
         reissuing fails for a certificate expiring in the ``panic_interval``.
         For example, you could generate a monitoring alert.  The default
@@ -54,7 +56,7 @@ class AcmeIssuingService(Service):
     _client = attr.ib()
     _clock = attr.ib()
     _tls_sni_01_responder = attr.ib()
-    check_interval = attr.ib(default=24 * 60 * 60)  # default is 1 day
+    check_seconds = attr.ib(default=24 * 60 * 60)  # default is 1 day
     reissue_interval = attr.ib(default=timedelta(days=30))
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
@@ -170,11 +172,11 @@ class AcmeIssuingService(Service):
 
     def when_certs_valid(self):
         """
-        Get a notification once all certificates are valid.
+        Get a notification once the startup check has completed.
 
         When the service starts, an initial check is made immediately; the
         deferred returned by this function will only fire once reissue has been
-        attempted for any certificates within the panic threshold.
+        attempted for any certificates within the panic interval.
 
         ..  note:: The reissue for any of these certificates may not have been
             successful; the panic callback will be invoked for any certificates
@@ -193,7 +195,7 @@ class AcmeIssuingService(Service):
         Service.startService(self)
         self._registered = False
         self._timer_service = TimerService(
-            self.check_interval, self._check_certs)
+            self.check_seconds, self._check_certs)
         self._timer_service.clock = self._clock
         self._timer_service.startService()
 

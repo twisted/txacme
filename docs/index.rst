@@ -14,16 +14,24 @@ There are several possible starting points for making use of txacme.
 String endpoint parser
 ~~~~~~~~~~~~~~~~~~~~~~
 
-..  todo:: None of the stuff in this section actually exists yet.
+.. todo:: None of the stuff in this section actually exists yet.
 
 The simplest part of txacme to use is the stream server endpoint. Two endpoint
 parsers are provided, under the ``le:`` (Let's Encrypt) and ``lets:`` (Let's
 Encrypt Test in Staging) prefixes. You will need to pass a directory to store
 certificates in, and the underlying endpoint to listen on.
 
+.. note:: The Let's Encrypt staging environment generates certificates signed
+   by *Fake LE Intermediate X1*, but does not have the stringent limits that
+   the production environment has, so using it to test your setup before
+   switching to the production environment is highly recommended.
+
 A typical example::
 
-  le:/srv/www/certs:tcp:443
+  lets:/srv/www/certs:tcp:443
+
+.. note:: The certificate directory must be writable by the user your
+   application is running as.
 
 The ACME client key will be stored in ``client.key`` in the cert directory; if
 this file does not exist, a key will automatically be created for you.
@@ -40,25 +48,31 @@ new certificate will then be issued on startup. For example::
 
   touch /srv/www/certs/example.com.pem
 
-This endpoint uses the ``tls-sni-01`` challenge type to perform authorization
-for your domains; this requires that your server is reachable on port 443 for
-those domains (the actual port you listen on can be different, as long as you
-are forwarding port 443 connections to your listening port).
+.. note:: This endpoint uses the ``tls-sni-01`` challenge type to perform
+   authorization for your domains; this requires that your server is reachable
+   on port 443 for those domains (the actual port you listen on can be
+   different, as long as you are forwarding port 443 connections to your
+   listening port).
 
-Periodically (at startup, and then every 24 hours) a check will be performed
-for expiring certificates; if a certificate will expire in less than 30 days'
-time, it will be reissued. If the reissue fails, it will just be retried at the
-next check. If a certificate will expire in less than 15 days' time, and
-reissue fails, a message will be logged at *CRITICAL* level.
+   If you have multiple applications, you can share a certificate directory
+   between them, using ``le:`` on the application running on port 443 to keep
+   the certificates up to date, and ``txsni:`` on the other applications to
+   make use of the same certificates.
+
+At startup, and periodically (every 24 hours), a check will be performed for
+expiring certificates; if a certificate will expire in less than 30 days' time,
+it will be reissued. If the reissue fails, it will be retried at the next
+check. If a certificate will expire in less than 15 days' time, and reissue
+fails, a message will be logged at *CRITICAL* level.
 
 
-String endpoint
-~~~~~~~~~~~~~~~
+Stream server endpoint
+~~~~~~~~~~~~~~~~~~~~~~
 
 If you need to customize the behaviour of the endpoint, or you are not using
 endpoint strings, instantiating the endpoint directly is quite simple.
 
-..  todo:: Actually implement and document this.
+.. todo:: Actually implement and document this.
 
 
 Issuing service
