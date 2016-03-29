@@ -1,7 +1,7 @@
 txacme: A Twisted implementation of the ACME protocol
 =====================================================
 
-.. include: ../README.rst
+.. include:: ../README.rst
    :start-after: teaser-begin
 
 
@@ -72,14 +72,13 @@ The endpoint is a simple wrapper that combines the functionality of the
    :noindex:
    :members:
 
-If you are not using the endpoint, then the `ICertificateStore` and
-`ITLSSNI01Responder` implementations in txacme are likely insufficient for your
-use case, so you will need to provide your own implementations of these. For
-example, an implementation might manage the certificate configuration of a
+If you are not using the endpoint, then the `.ICertificateStore` and
+`.ITLSSNI01Responder` implementations in txacme are likely insufficient for
+your use case, so you will need to provide your own implementations of these.
+For example, an implementation might manage the certificate configuration of a
 cloud load balancer.
 
-.. todo:: Currently, only the ``tls-sni-01`` challenge method is supported, as
-   the endpoint can answer these challenges directly via the listening port. An
+.. todo:: Currently, only the ``tls-sni-01`` challenge method is supported. An
    API change is planned that will allow providing responders for other
    challenge types, such as ``http-01`` or ``dns-01``.
 
