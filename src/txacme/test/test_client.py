@@ -12,7 +12,7 @@ from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Contains, ContainsDict, Equals, IsInstance,
+    AfterPreprocessing, ContainsDict, Equals, Is, IsInstance,
     MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
     Mismatch, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
@@ -31,13 +31,14 @@ from twisted.web.http_headers import Headers
 from zope.interface import implementer
 
 from txacme.client import (
-    _default_client, _find_tls_sni_01_challenge, _parse_header_links,
-    answer_tls_sni_01_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
+    _default_client, _find_supported_challenge, _parse_header_links,
+    answer_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
     fqdn_identifier, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient,
     NoSupportedChallenges, poll_until_valid, ServerError)
-from txacme.interfaces import ITLSSNI01Responder
+from txacme.interfaces import IResponder
 from txacme.messages import CertificateRequest
 from txacme.test import strategies as ts
+from txacme.testing import NullResponder
 from txacme.util import (
     csr_for_names, generate_private_key, generate_tls_sni_01_cert)
 
@@ -229,7 +230,6 @@ def on_jws(matcher):
                     on_json(matcher)))))
 
 
-@implementer(ITLSSNI01Responder)
 @attr.s
 class TestResponse(object):
     """
@@ -251,15 +251,17 @@ class TestResponse(object):
         return h
 
 
+@implementer(IResponder)
 @attr.s
 class RecordingResponder(object):
-    names = attr.ib()
+    challenges = attr.ib()
+    challenge_type = attr.ib()
 
-    def start_responding(self, server_name):
-        self.names.add(server_name)
+    def start_responding(self, challenge):
+        self.challenges.add(challenge)
 
-    def stop_responding(self, server_name):
-        self.names.discard(server_name)
+    def stop_responding(self, challenge):
+        self.challenges.discard(challenge)
 
 
 class ClientTests(TestCase):
@@ -903,7 +905,8 @@ class ClientTests(TestCase):
                     challs)),
                 combinations=combinations))
         with ExpectedException(NoSupportedChallenges):
-            _find_tls_sni_01_challenge(authzr)
+            _find_supported_challenge(
+                authzr, [NullResponder(challenges.TLSSNI01.typ)])
 
     def test_no_tls_sni_01(self):
         """
@@ -929,7 +932,8 @@ class ClientTests(TestCase):
                     challs)),
                 combinations=combinations))
         with ExpectedException(NoSupportedChallenges):
-            _find_tls_sni_01_challenge(authzr)
+            _find_supported_challenge(
+                authzr, [NullResponder(challenges.TLSSNI01.typ)])
 
     def test_only_tls_sni_01(self):
         """
@@ -952,20 +956,23 @@ class ClientTests(TestCase):
             body=messages.Authorization(
                 challenges=challs,
                 combinations=combinations))
+        responder = NullResponder(challenges.TLSSNI01.typ)
         self.assertThat(
-            _find_tls_sni_01_challenge(authzr),
-            MatchesAll(
-                IsInstance(messages.ChallengeBody),
-                MatchesStructure(
-                    chall=IsInstance(challenges.TLSSNI01))))
+            _find_supported_challenge(authzr, [responder]),
+            MatchesListwise([
+                Is(responder),
+                MatchesAll(
+                    IsInstance(messages.ChallengeBody),
+                    MatchesStructure(
+                        chall=IsInstance(challenges.TLSSNI01)))]))
 
-    def test_answer_tls_sni_01_challenge(self):
+    def test_answer_challenge_function(self):
         """
-        The challenge hostname is found in the responder after invoking
-        `.answer_tls_sni_01_challenge`.
+        The challenge is found in the responder after invoking
+        `~txacme.client.answer_challenge`.
         """
-        names = set()
-        responder = RecordingResponder(names)
+        challenges = set()
+        responder = RecordingResponder(challenges, u'tls-sni-01')
         uri = u'https://example.org/acme/authz/1/1'
         key_authorization = (
             u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
@@ -1008,17 +1015,16 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
+            d = answer_challenge(authzr, client, [responder])
+            self.assertThat(d, succeeded(Always()))
+            _, response = d.result
             self.assertThat(
-                answer_tls_sni_01_challenge(authzr, client, responder),
-                succeeded(Always()))
-            challenge_name = (
-                u'7320864740220ae7dee74baacba7a3ec.'
-                u'f79e3a00bad30df0a7fdeaebe0944336.acme.invalid')
-            self.assertThat(names, Contains(challenge_name))
+                list(challenges),
+                MatchesListwise([Is(response)]))
             self.assertThat(
-                maybeDeferred(responder.stop_responding, challenge_name),
+                maybeDeferred(responder.stop_responding, response),
                 succeeded(Always()))
-            self.assertThat(names, Equals(set()))
+            self.assertThat(challenges, Equals(set()))
 
     def _make_poll_response(self, uri, identifier_json):
         """

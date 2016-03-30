@@ -113,12 +113,12 @@ class AcmeFixture(Fixture):
                 RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW)
         else:
             acme_client = self.acme_client
-        self.responder = NullResponder()
+        self.responder = NullResponder(u'tls-sni-01')
         args = dict(
             cert_store=self.cert_store,
             client=acme_client,
             clock=self.clock,
-            tls_sni_01_responder=self.responder,
+            responders=[self.responder],
             panic_interval=self._panic_interval,
             panic=self._panic,
             generate_key=lambda: RSA_KEY_512_RAW)

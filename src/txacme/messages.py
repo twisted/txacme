@@ -19,10 +19,12 @@ class CertificateRequest(JSONObjectWithFields):
     Differs from the upstream version because it wraps a Cryptography CSR
     object instead of a PyOpenSSL one.
 
-    ..  seealso: `acme.messages.CertificateRequest`
-
-    :ivar cryptography.x509.CertificateSigningRequest csr: A CSR.
+    ..  seealso:: `acme.messages.CertificateRequest`,
+        `cryptography.x509.CertificateSigningRequest`
     """
     resource_type = 'new-cert'
     resource = Resource(resource_type)
     csr = Field('csr', decoder=decode_csr, encoder=encode_csr)
+
+
+__all__ = ['CertificateRequest']
