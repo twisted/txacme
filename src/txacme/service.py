@@ -12,7 +12,7 @@ from twisted.application.service import Service
 from twisted.internet.defer import Deferred, gatherResults, succeed
 from twisted.logger import Logger
 
-from txacme.client import answer_tls_sni_01_challenge, poll_until_valid
+from txacme.client import answer_challenge, poll_until_valid
 from txacme.util import clock_now, csr_for_names, generate_private_key, tap
 
 
@@ -36,8 +36,11 @@ class AcmeIssuingService(Service):
         constructed with `Client.from_url <txacme.client.Client.from_url>`.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
-    :param .ITLSSNI01Responder tls_sni_01_responder: Responder for
-        ``tls-sni-01`` challenges.
+
+    :type responders: List[`.IResponder`]
+    :param responders: Challenge responders.  Usually only one responder is
+        needed; if more than one responder for the same type is provided, only
+        the first will be used.
     :param ~datetime.timedelta check_interval: How often to check for expiring
         certificates.
     :param ~datetime.timedelta reissue_interval: If a certificate is expiring
@@ -58,7 +61,7 @@ class AcmeIssuingService(Service):
     cert_store = attr.ib()
     _client = attr.ib()
     _clock = attr.ib()
-    _tls_sni_01_responder = attr.ib()
+    _responders = attr.ib()
     check_interval = attr.ib(default=timedelta(days=1))
     reissue_interval = attr.ib(default=timedelta(days=30))
     panic_interval = attr.ib(default=timedelta(days=15))
@@ -131,6 +134,20 @@ class AcmeIssuingService(Service):
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()))]
 
+        def answer_and_poll(authzr):
+            def got_challenge(r):
+                responder, response = r
+
+                def stop_responding(result):
+                    return responder.stop_responding(response)
+
+                return (
+                    poll_until_valid(authzr, self._clock, self._client)
+                    .addBoth(tap(stop_responding)))
+            return (
+                answer_challenge(authzr, self._client, self._responders)
+                .addCallback(got_challenge))
+
         def got_cert(certr):
             objects.append(
                 Certificate(
@@ -146,11 +163,7 @@ class AcmeIssuingService(Service):
 
         return (
             self._client.request_challenges(server_name)
-            .addCallback(
-                tap(answer_tls_sni_01_challenge),
-                self._client,
-                self._tls_sni_01_responder)
-            .addCallback(poll_until_valid, self._clock, self._client)
+            .addCallback(answer_and_poll)
             .addCallback(lambda ign: self._client.request_issuance(
                 messages.CertificateRequest(
                     csr=csr_for_names([server_name], key))))

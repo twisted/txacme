@@ -9,7 +9,7 @@ import attr
 from twisted.internet.ssl import CertificateOptions
 from zope.interface import implementer
 
-from txacme.interfaces import ITLSSNI01Responder
+from txacme.interfaces import IResponder
 from txacme.util import (
     cert_cryptography_to_pyopenssl, generate_tls_sni_01_cert,
     key_cryptography_to_pyopenssl)
@@ -41,11 +41,13 @@ class _MergingMappingProxy(Mapping):
         return key in self.underlay or key in self.overlay
 
 
-@implementer(ITLSSNI01Responder)
+@implementer(IResponder)
 class TLSSNI01Responder(object):
     """
     A tls-sni-01 challenge responder for txsni.
     """
+    challenge_type = u'tls-sni-01'
+
     _generate_private_key = None
 
     def __init__(self):
@@ -63,10 +65,11 @@ class TLSSNI01Responder(object):
         return _MergingMappingProxy(
             underlay=host_map, overlay=self._challenge_options)
 
-    def start_responding(self, server_name):
+    def start_responding(self, response):
         """
         Put a context into the mapping.
         """
+        server_name = response.z_domain.decode('ascii')
         cert, pkey = generate_tls_sni_01_cert(
             server_name, _generate_private_key=self._generate_private_key)
         server_name = server_name.encode('utf-8')
@@ -74,8 +77,12 @@ class TLSSNI01Responder(object):
             certificate=cert_cryptography_to_pyopenssl(cert),
             privateKey=key_cryptography_to_pyopenssl(pkey))
 
-    def stop_responding(self, server_name):
+    def stop_responding(self, response):
         """
         Remove a context from the mapping.
         """
+        server_name = response.z_domain.decode('ascii')
         self._challenge_options.pop(server_name, None)
+
+
+__all__ = ['TLSSNI01Responder']

@@ -502,46 +502,54 @@ class Client(object):
                 .addActionFinish())
 
 
-def _find_tls_sni_01_challenge(authzr):
+def _find_supported_challenge(authzr, responders):
     """
-    Find a challenge combination that consists solely of a tls-sni-01
-    challenge.
+    Find a challenge combination that consists of a single challenge that the
+    responder can satisfy.
 
     :param ~acme.messages.AuthorizationResource auth: The authorization to
         examine.
 
-    :raises NoSupportedChallenges: When a suitable challenge combination is
-        not found.
+    :type responder: List[`.IResponder`]
+    :param responder: The possible responders to use.
 
-    :rtype: ~acme.messages.ChallengeBody
-    :return: The challenge that was found.
+    :raises NoSupportedChallenges: When a suitable challenge combination is not
+        found.
+
+    :rtype: Tuple[`.IResponder`, `~acme.messages.ChallengeBody`]
+    :return: The responder and challenge that were found.
     """
-    for challbs in authzr.body.resolved_combinations:
-        if [challb.typ for challb in challbs] == [u'tls-sni-01']:
-            return challbs[0]
-    else:
+    matches = [
+        (responder, challbs[0])
+        for challbs in authzr.body.resolved_combinations
+        for responder in responders
+        if [challb.typ for challb in challbs] == [responder.challenge_type]]
+    if len(matches) == 0:
         raise NoSupportedChallenges(authzr)
+    else:
+        return matches[0]
 
 
-def answer_tls_sni_01_challenge(authzr, client, responder):
+def answer_challenge(authzr, client, responders):
     """
-    Complete an authorization using a responder
+    Complete an authorization using a responder.
 
     :param ~acme.messages.AuthorizationResource auth: The authorization to
         complete.
     :param .Client client: The ACME client.
-    :param responder: An ``ITLSSNI01Responder`` implementer to use to complete
-        the challenge.
+
+    :type responders: List[`.IResponder`]
+    :param responders: A list of responders that can be used to complete the
+        challenge with.
 
     :return: A deferred firing when the authorization is verified.
     """
-    challb = _find_tls_sni_01_challenge(authzr)
+    responder, challb = _find_supported_challenge(authzr, responders)
     response = challb.response(client.key)
-    name = response.z_domain.decode('ascii')
     return (
-        maybeDeferred(responder.start_responding, name)
+        maybeDeferred(responder.start_responding, response)
         .addCallback(lambda _: client.answer_challenge(challb, response))
-        .addCallback(lambda _: name)
+        .addCallback(lambda _: (responder, response))
         )
 
 
@@ -858,6 +866,6 @@ class JWSClient(object):
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
-    'answer_tls_sni_01_challenge', 'poll_until_valid', 'NoSupportedChallenges',
+    'answer_challenge', 'poll_until_valid', 'NoSupportedChallenges',
     'AuthorizationFailed', 'DER_CONTENT_TYPE', 'LETSENCRYPT_DIRECTORY',
     'LETSENCRYPT_STAGING_DIRECTORY']

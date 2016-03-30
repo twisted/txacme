@@ -5,6 +5,7 @@ from collections import OrderedDict
 from datetime import timedelta
 from uuid import uuid4
 
+import attr
 from acme import challenges, messages
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -14,7 +15,7 @@ from twisted.internet.defer import fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
-from txacme.interfaces import ICertificateStore, ITLSSNI01Responder
+from txacme.interfaces import ICertificateStore, IResponder
 from txacme.util import clock_now, generate_private_key
 
 
@@ -164,15 +165,18 @@ class FakeClient(object):
                     encoding=serialization.Encoding.DER))])
 
 
-@implementer(ITLSSNI01Responder)
+@implementer(IResponder)
+@attr.s
 class NullResponder(object):
     """
     A responder that does absolutely nothing.
     """
-    def start_responding(self, server_name):
+    challenge_type = attr.ib()
+
+    def start_responding(self, challenge):
         pass
 
-    def stop_responding(self, server_name):
+    def stop_responding(self, challenge):
         pass
 
 

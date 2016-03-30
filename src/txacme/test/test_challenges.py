@@ -7,9 +7,10 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from zope.interface.verify import verifyObject
 
 from txacme.challenges import _MergingMappingProxy, TLSSNI01Responder
-from txacme.test.strategies import dns_names
+from txacme.interfaces import IResponder
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
 
@@ -18,15 +19,23 @@ class ResponderTests(TestCase):
     `.TLSSNI01Responder` is a responder for tls-sni-01 challenges that works
     with txsni.
     """
-    @example(u'example.com')
-    @given(dns_names())
-    def test_stop_responding_already_stopped(self, server_name):
+    def test_interface(self):
+        """
+        The `.IResponder` interface is correctly implemented.
+        """
+        verifyObject(IResponder, TLSSNI01Responder())
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
+    def test_stop_responding_already_stopped(self, token):
         """
         Calling ``stop_responding`` when we are not responding for a server
         name does nothing.
         """
+        challenge = challenges.TLSSNI01(token=token)
+        response = challenge.response(RSA_KEY_512)
         responder = TLSSNI01Responder()
-        responder.stop_responding(server_name)
+        responder.stop_responding(response)
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
@@ -45,18 +54,18 @@ class ResponderTests(TestCase):
         wrapped_host_map = responder.wrap_host_map(host_map)
 
         self.assertThat(wrapped_host_map, Not(Contains(server_name)))
-        responder.start_responding(server_name)
+        responder.start_responding(response)
         self.assertThat(
             wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
         # Starting twice before stopping doesn't break things
-        responder.start_responding(server_name)
+        responder.start_responding(response)
         self.assertThat(
             wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
-        responder.stop_responding(server_name)
+        responder.stop_responding(response)
         self.assertThat(wrapped_host_map, Not(Contains(server_name)))
 
 

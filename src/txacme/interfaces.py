@@ -2,28 +2,33 @@
 """
 Interface definitions for txacme.
 """
-from zope.interface import Interface
+from zope.interface import Attribute, Interface
 
 
-class ITLSSNI01Responder(Interface):
+class IResponder(Interface):
     """
-    Configuration for a tls-sni-01 challenge responder.
+    Configuration for a ACME challenge responder.
 
     The actual responder may exist somewhere else, this interface is merely for
     an object that knows how to configure it.
     """
-    def start_responding(server_name):
+    challenge_type = Attribute(
+        """
+        The type of challenge this responder is able to respond for.
+
+        Must correspond to one of the types from `acme.challenges`; for
+        example, ``u'tls-sni-01'``.
+        """)
+
+    def start_responding(response):
         """
         Start responding for a particular challenge.
 
-        ..  seealso:: `txacme.util.generate_tls_sni_01_cert`
-
-        :param str server_name: The server name to respond for: ie.
-            ``u'<hex>.<hex>.acme.invalid'``.
+        :param response: The `acme.challenges` response object; the exact type
+            of this object depends on the challenge type.
 
         :rtype: ``Deferred``
-        :return: A deferred firing when the given hostname is ready to respond
-                 with the given authorization.
+        :return: A deferred firing when the challenge is ready to be verified.
         """
 
     def stop_responding(server_name):
@@ -34,8 +39,8 @@ class ITLSSNI01Responder(Interface):
         explicit cleanup; implementations should not rely on this method always
         being called.
 
-        :param str server_name: The server name to stop responding for: ie.
-            ``u'<hex>.<hex>.acme.invalid'``.
+        :param response: The `acme.challenges` response object; the exact type
+            of this object depends on the challenge type.
         """
 
 
@@ -79,4 +84,4 @@ class ICertificateStore(Interface):
         """
 
 
-__all__ = ['ITLSSNI01Responder', 'ICertificateStore']
+__all__ = ['IResponder', 'ICertificateStore']

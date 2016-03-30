@@ -24,8 +24,8 @@ from txsni.tlsendpoint import TLSEndpoint
 
 from txacme.challenges import TLSSNI01Responder
 from txacme.client import (
-    answer_tls_sni_01_challenge, Client, fqdn_identifier,
-    LETSENCRYPT_STAGING_DIRECTORY, poll_until_valid)
+    answer_challenge, Client, fqdn_identifier, LETSENCRYPT_STAGING_DIRECTORY,
+    poll_until_valid)
 from txacme.messages import CertificateRequest
 from txacme.testing import FakeClient, NullResponder
 from txacme.util import csr_for_names, generate_private_key, tap
@@ -83,8 +83,8 @@ class ClientTestsMixin(object):
             self.responder = responder
             return (
                 DeferredContext(
-                    answer_tls_sni_01_challenge(
-                        self.authzr, self.client, responder))
+                    answer_challenge(
+                        self.authzr, self.client, [responder]))
                 .addActionFinish())
 
     def _test_poll(self, auth):
@@ -140,7 +140,7 @@ class ClientTestsMixin(object):
             .addCallback(tap(lambda _: self._test_poll_pending(self.authzr)))
             .addCallback(self._test_answer_challenge)
             .addCallback(tap(lambda _: self._test_poll(self.authzr)))
-            .addCallback(lambda n: self.responder.stop_responding(n))
+            .addCallback(lambda r: self.responder.stop_responding(r[1]))
             .addCallback(lambda _: self._test_issue(self.HOST))
             .addCallback(self._test_chain)
             .addActionFinish())
@@ -215,7 +215,7 @@ class FakeClientTests(ClientTestsMixin, TestCase):
         return succeed(FakeClient(key, reactor))
 
     def _create_responder(self):
-        return succeed(NullResponder())
+        return succeed(NullResponder(u'tls-sni-01'))
 
 
 __all__ = ['LetsEncryptStagingTests', 'FakeClientTests']

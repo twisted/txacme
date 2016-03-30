@@ -25,8 +25,9 @@ from twisted.python.failure import Failure
 
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.test import strategies as ts
-from txacme.test.test_client import Always, RSA_KEY_512, RSA_KEY_512_RAW
-from txacme.testing import FakeClient, MemoryStore, NullResponder
+from txacme.test.test_client import (
+    Always, RecordingResponder, RSA_KEY_512, RSA_KEY_512_RAW)
+from txacme.testing import FakeClient, MemoryStore
 
 
 def _generate_cert(server_name, not_valid_before, not_valid_after,
@@ -113,12 +114,12 @@ class AcmeFixture(Fixture):
                 RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW)
         else:
             acme_client = self.acme_client
-        self.responder = NullResponder()
+        self.responder = RecordingResponder(set(), u'tls-sni-01')
         args = dict(
             cert_store=self.cert_store,
             client=acme_client,
             clock=self.clock,
-            tls_sni_01_responder=self.responder,
+            responders=[self.responder],
             panic_interval=self._panic_interval,
             panic=self._panic,
             generate_key=lambda: RSA_KEY_512_RAW)
@@ -197,6 +198,7 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(
                 service.when_certs_valid(),
                 succeeded(Is(None)))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
     @given(fixture=panicing_certs_fixture())
     def test_when_certs_valid_certs_expired(self, fixture):
@@ -219,6 +221,7 @@ class AcmeIssuingServiceTests(TestCase):
                         _match_certificate(
                             MatchesStructure(
                                 not_valid_after=GreaterThan(max_expiry))))))))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
     def test_time_marches_on(self):
         """
@@ -253,6 +256,7 @@ class AcmeIssuingServiceTests(TestCase):
                         u'example.com': Not(Equals(certs[u'example.com'])),
                         u'example.org': Equals(certs[u'example.org']),
                         })))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
             fixture.clock.advance(36 * 60 * 60)
             self.assertThat(
@@ -262,6 +266,7 @@ class AcmeIssuingServiceTests(TestCase):
                         u'example.com': Not(Equals(certs[u'example.com'])),
                         u'example.org': Not(Equals(certs[u'example.org'])),
                         })))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
     @run_test_with(AsynchronousDeferredRunTest)
     def test_errors(self):
@@ -283,10 +288,12 @@ class AcmeIssuingServiceTests(TestCase):
             self.assertThat(
                 fixture.service.when_certs_valid(),
                 succeeded(Is(None)))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
             fixture.clock.advance(36 * 60 * 60)
             self.assertThat(flush_logged_errors(), HasLength(1))
             self.assertThat(panics, Equals([]))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
             fixture.clock.advance(15 * 24 * 60 * 60)
             self.assertThat(
@@ -294,6 +301,7 @@ class AcmeIssuingServiceTests(TestCase):
                 MatchesListwise([
                     MatchesListwise([IsInstance(Failure), Equals(u'a' * 100)]),
                     ]))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
     def test_starting_stopping_cancellation(self):
         """
@@ -334,6 +342,7 @@ class AcmeIssuingServiceTests(TestCase):
                 fixture.cert_store.as_dict(),
                 succeeded(
                     MatchesDict({server_name: Not(Equals([]))})))
+            self.assertThat(fixture.responder.challenges, HasLength(0))
 
 
 __all__ = ['AcmeIssuingServiceTests']

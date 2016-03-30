@@ -84,14 +84,11 @@ The endpoint is a simple wrapper that combines the functionality of the
    :noindex:
    :members:
 
-The `.ICertificateStore` and `.ITLSSNI01Responder` interfaces are the main
-extension points for using the issuing service directly. For example, a custom
+The `.ICertificateStore` and `.IResponder` interfaces are the main extension
+points for using the issuing service directly. For example, a custom
 implementation might manage the certificate configuration of a cloud load
-balancer.
-
-.. todo:: Currently, only the ``tls-sni-01`` challenge method is supported. An
-   API change is planned that will allow providing responders for other
-   challenge types, such as ``http-01`` or ``dns-01``.
+balancer, implementing the ``dns-01`` challenge type by modifying DNS entries
+in the cloud DNS configuration.
 
 .. _txsni: https://github.com/glyph/txsni
 
