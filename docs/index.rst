@@ -87,8 +87,8 @@ The endpoint is a simple wrapper that combines the functionality of the
 The `.ICertificateStore` and `.IResponder` interfaces are the main extension
 points for using the issuing service directly. For example, a custom
 implementation might manage the certificate configuration of a cloud load
-balancer, implementing the ``dns-01`` challenge type by modify DNS entries in
-the cloud DNS configuration.
+balancer, implementing the ``dns-01`` challenge type by modifying DNS entries
+in the cloud DNS configuration.
 
 .. _txsni: https://github.com/glyph/txsni
 
