@@ -134,6 +134,20 @@ class AcmeIssuingService(Service):
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()))]
 
+        def answer_and_poll(authzr):
+            def got_challenge(r):
+                responder, response = r
+
+                def stop_responding(result):
+                    return responder.stop_responding(response)
+
+                return (
+                    poll_until_valid(authzr, self._clock, self._client)
+                    .addBoth(tap(stop_responding)))
+            return (
+                answer_challenge(authzr, self._client, self._responders)
+                .addCallback(got_challenge))
+
         def got_cert(certr):
             objects.append(
                 Certificate(
@@ -149,11 +163,7 @@ class AcmeIssuingService(Service):
 
         return (
             self._client.request_challenges(server_name)
-            .addCallback(
-                tap(answer_challenge),
-                self._client,
-                self._responders)
-            .addCallback(poll_until_valid, self._clock, self._client)
+            .addCallback(answer_and_poll)
             .addCallback(lambda ign: self._client.request_issuance(
                 messages.CertificateRequest(
                     csr=csr_for_names([server_name], key))))
