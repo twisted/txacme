@@ -52,7 +52,7 @@ example::
    authorization; this requires that the endpoint is reachable on port 443 for
    those domains (possibly via port forwarding).
 
-.. note:: A certificate directored can be shared amongst multiple applications,
+.. note:: A certificate directory can be shared amongst multiple applications,
    using ``le:`` for the application running on port 443 to keep the
    certificates up to date, and ``txsni:`` for the other applications to make
    use of the same certificates.
