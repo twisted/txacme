@@ -1,28 +1,90 @@
 """
 Tests for `txacme.endpoint`.
 """
+from datetime import datetime
+
 from fixtures import TempDir
 from testtools import TestCase
 from testtools.matchers import (
     Equals, Is, IsInstance, MatchesAll, MatchesPredicate, MatchesStructure)
+from testtools.twistedsupport import succeeded
+from twisted.internet.defer import succeed
 from twisted.internet.interfaces import (
-    IStreamServerEndpoint, IStreamServerEndpointStringParser)
+    IListeningPort, IStreamServerEndpoint, IStreamServerEndpointStringParser)
+from twisted.internet.protocol import Factory
+from twisted.internet.task import Clock
 from twisted.plugin import IPlugin
 from twisted.plugins import txacme_endpoint
 from twisted.python.filepath import FilePath
 from twisted.python.url import URL
 from txsni.snimap import HostDirectoryMap
+from zope.interface import implementer
 from zope.interface.verify import verifyObject
 
 from txacme.client import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 from txacme.endpoint import _AcmeParser, AutoTLSEndpoint
 from txacme.store import DirectoryStore
+from txacme.test.test_client import Always, RSA_KEY_512
+from txacme.testing import FakeClient, MemoryStore
+
+
+@implementer(IListeningPort)
+class DummyPort(object):
+    """
+    Port implementation that does nothing.
+    """
+    def stopListening(self):  # noqa
+        pass
+
+
+@implementer(IStreamServerEndpoint)
+class DummyEndpoint(object):
+    """
+    Endpoint implementation that does nothing.
+    """
+    def listen(self, factory):
+        return succeed(DummyPort())
 
 
 class EndpointTests(TestCase):
     """
     Tests for `~txacme.endpoint.AutoTLSEndpoint`.
     """
+    def setUp(self):
+        super(EndpointTests, self).setUp()
+        clock = Clock()
+        clock.rightNow = (
+            datetime.now() - datetime(1970, 1, 1)).total_seconds()
+        client = FakeClient(RSA_KEY_512, clock)
+        self.endpoint = AutoTLSEndpoint(
+            reactor=clock,
+            directory=None,
+            client_creator=lambda reactor, directory: succeed(client),
+            cert_store=MemoryStore(),
+            cert_mapping={},
+            sub_endpoint=DummyEndpoint())
+
+    def test_listen_starts_service(self):
+        """
+        ``AutoTLSEndpoint.listen`` starts an ``AcmeIssuingService``.  Stopping
+        the port stops the service.
+        """
+        factory = Factory()
+        d = self.endpoint.listen(factory)
+        self.assertThat(
+            d,
+            succeeded(
+                MatchesPredicate(
+                    IListeningPort.providedBy,
+                    '%r does not provide IListeningPort')))
+        port = d.result
+        self.assertThat(
+            self.endpoint.service,
+            MatchesStructure(running=Equals(True)))
+        self.assertThat(port.stopListening(), succeeded(Always()))
+        self.assertThat(
+            self.endpoint.service,
+            MatchesStructure(running=Equals(False)))
 
 
 class PluginTests(TestCase):
@@ -67,7 +129,8 @@ class PluginTests(TestCase):
         directory = URL.fromText(u'https://example.com/acme')
         parser = _AcmeParser(u'prefix', directory)
         tempdir = self.useFixture(TempDir()).path
-        temppath = FilePath(tempdir)
+        temp_path = FilePath(tempdir)
+        key_path = temp_path.child('client.key')
         reactor = object()
         self.assertThat(
             parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
@@ -79,14 +142,18 @@ class PluginTests(TestCase):
                     cert_store=MatchesAll(
                         IsInstance(DirectoryStore),
                         MatchesStructure(
-                            path=Equals(temppath))),
+                            path=Equals(temp_path))),
                     cert_mapping=MatchesAll(
                         IsInstance(HostDirectoryMap),
                         MatchesStructure(
-                            directoryPath=Equals(temppath))),
+                            directoryPath=Equals(temp_path))),
                     sub_endpoint=MatchesPredicate(
                         IStreamServerEndpoint.providedBy,
                         '%r is not a stream server endpoint'))))
+        self.assertThat(key_path.isfile(), Equals(True))
+        key_data = key_path.getContent()
+        parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
+        self.assertThat(key_path.getContent(), Equals(key_data))
 
 
 __all__ = ['EndpointTests', 'PluginTests']
