@@ -95,13 +95,14 @@ in the cloud DNS configuration.
 .. _txsni: https://github.com/glyph/txsni
 
 
-API documentation
-=================
+Other documentation
+===================
 
 .. toctree::
    :maxdepth: 2
 
    API documentation </api/modules>
+   changelog
 
 
 Indices and tables
