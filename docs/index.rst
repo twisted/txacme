@@ -103,8 +103,9 @@ Other documentation
 .. toctree::
    :maxdepth: 2
 
-   API documentation </api/modules>
+   api-stability
    changelog
+   API documentation </api/modules>
 
 
 Indices and tables
