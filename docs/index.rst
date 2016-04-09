@@ -28,8 +28,8 @@ A typical example::
 
   twistd -n web --port lets:/srv/www/certs:tcp:443 --path /srv/www/root
 
-.. note:: The certificate directory must be writable by the user the
-   application is running as.
+.. note:: The certificate directory must already exist, and be writable by the
+   user the application is running as.
 
 The ACME client key will be stored in ``client.key`` in the cert directory. If
 this file does not exist, a new key will automatically be generated.
