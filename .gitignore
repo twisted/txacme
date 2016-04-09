@@ -9,3 +9,4 @@ build/
 dist/
 docs/_build
 docs/api/
+dropin.cache

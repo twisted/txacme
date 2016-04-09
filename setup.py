@@ -23,7 +23,7 @@ setup(
     maintainer='Tristan Seligmann',
     maintainer_email='mithrandi@mithrandi.net',
     long_description=read('README.rst'),
-    packages=find_packages(where='src'),
+    packages=find_packages(where='src') + ['twisted.plugins'],
     package_dir={'': 'src'},
     zip_safe=True,
     classifiers=[

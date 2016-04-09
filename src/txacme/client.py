@@ -29,7 +29,7 @@ from txacme.util import tap
 
 
 LETSENCRYPT_DIRECTORY = URL.fromText(
-    u'https://acme-v01.api.letsencrypt.org/')
+    u'https://acme-v01.api.letsencrypt.org/directory')
 
 
 LETSENCRYPT_STAGING_DIRECTORY = URL.fromText(

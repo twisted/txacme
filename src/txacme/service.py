@@ -2,7 +2,6 @@ from datetime import timedelta
 from functools import partial
 
 import attr
-from acme import messages
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -12,7 +11,8 @@ from twisted.application.service import Service
 from twisted.internet.defer import Deferred, gatherResults, succeed
 from twisted.logger import Logger
 
-from txacme.client import answer_challenge, poll_until_valid
+from txacme.client import answer_challenge, fqdn_identifier, poll_until_valid
+from txacme.messages import CertificateRequest
 from txacme.util import clock_now, csr_for_names, generate_private_key, tap
 
 
@@ -162,10 +162,10 @@ class AcmeIssuingService(Service):
             return objects
 
         return (
-            self._client.request_challenges(server_name)
+            self._client.request_challenges(fqdn_identifier(server_name))
             .addCallback(answer_and_poll)
             .addCallback(lambda ign: self._client.request_issuance(
-                messages.CertificateRequest(
+                CertificateRequest(
                     csr=csr_for_names([server_name], key))))
             .addCallback(got_cert)
             .addCallback(self._client.fetch_chain)
