@@ -6,6 +6,7 @@ from functools import partial
 
 import attr
 from acme.jose import JWKRSA, RS256
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from twisted.internet.defer import gatherResults, maybeDeferred
 from twisted.internet.endpoints import serverFromString
@@ -98,18 +99,21 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     def colon_join(items):
         return ':'.join([item.replace(':', '\\:') for item in items])
     sub = colon_join(list(args) + ['='.join(item) for item in kwargs.items()])
-    pem_path = FilePath(pemdir)
-    acme_key_file = pem_path.child('client.key')
+    pem_path = FilePath(pemdir).asTextMode()
+    acme_key_file = pem_path.child(u'client.key')
     if acme_key_file.exists():
-        acme_key = acme_key_file.getContent()
+        key = serialization.load_pem_private_key(
+            acme_key_file.getContent(),
+            password=None,
+            backend=default_backend())
     else:
         key = generate_private_key(u'rsa')
-        acme_key = JWKRSA(key=key)
         acme_key_file.setContent(
             key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()))
+    acme_key = JWKRSA(key=key)
     return AutoTLSEndpoint(
         reactor=reactor,
         directory=directory,

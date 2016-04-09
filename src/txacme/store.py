@@ -21,7 +21,7 @@ class DirectoryStore(object):
         """
         Synchronously retrieve an entry.
         """
-        p = self.path.child(server_name.encode('utf-8'))
+        p = self.path.child(server_name + u'.pem')
         if p.isfile():
             return parse(p.getContent())
         else:
@@ -31,14 +31,15 @@ class DirectoryStore(object):
         return maybeDeferred(self._get, server_name)
 
     def store(self, server_name, pem_objects):
-        p = self.path.child(server_name.encode('utf-8'))
+        p = self.path.child(server_name + u'.pem')
         p.setContent(b''.join(o.as_bytes() for o in pem_objects))
         return succeed(None)
 
     def as_dict(self):
         return succeed(
-            {server_name: self._get(server_name)
-             for server_name in self.path.listdir()})
+            {fn[:-4]: self._get(fn[:-4])
+             for fn in self.path.listdir()
+             if fn.endswith(u'.pem')})
 
 
 __all__ = ['DirectoryStore']
