@@ -14,8 +14,6 @@ There are several possible starting points for making use of txacme.
 Server endpoint string
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. todo:: None of the stuff in this section actually exists yet.
-
 The simplest part of txacme to use is the stream server endpoint. Two endpoint
 parsers are provided, under the ``le:`` (Let's Encrypt) and ``lets:`` (Let's
 Encrypt Test in Staging) prefixes. The endpoint takes as parameters a directory
@@ -68,9 +66,13 @@ Server endpoint API
 ~~~~~~~~~~~~~~~~~~~
 
 The endpoint can be instantiated directly as well; this allows extra
-customizations beyond what the string syntax provides for.
+customizations beyond what the string syntax provides for. Most of the
+parameters that can be passed correspond to the parameters of the issuing
+service (see below).
 
-.. todo:: Actually implement and document this.
+.. autoclass:: txacme.endpoint.AutoTLSEndpoint
+   :noindex:
+   :members:
 
 
 Issuing service
