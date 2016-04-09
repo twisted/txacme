@@ -20,9 +20,11 @@ Encrypt Test in Staging) prefixes. The endpoint takes as parameters a directory
 to store certificates in, and the underlying endpoint to listen on.
 
 .. note:: The Let's Encrypt staging environment generates certificates signed
-   by *Fake LE Intermediate X1*, but does not have the stringent limits that
+   by *Fake LE Intermediate X1*, but does not have the `stringent limits`_ that
    the production environment has, so using it for testing before switching to
    the production environment is highly recommended.
+
+   .. _stringent limits: https://community.letsencrypt.org/t/rate-limits-for-lets-encrypt/6769
 
 A typical example::
 
