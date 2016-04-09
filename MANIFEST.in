@@ -1,5 +1,6 @@
 include README.rst LICENSE tox.ini .coveragerc setup.cfg
 graft docs
 graft src
+prune src/txacme/newsfragments
 include versioneer.py
 include src/txacme/_version.py
