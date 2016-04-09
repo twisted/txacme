@@ -47,7 +47,7 @@ setup(
         'acme>=0.4.0',
         'attrs',
         'eliot>=0.8.0',
-        'pem',
+        'pem>=16.1.0',
         'treq>=15.1.0',
         'txsni',
         ],
@@ -55,7 +55,6 @@ setup(
         'test': [
             'fixtures>=1.4.0',
             'hypothesis>=3.1.0,<4.0.0',
-            'mock',
             'testrepository>=0.0.20',
             'testscenarios',
             'testtools>=2.0.0',
