@@ -177,7 +177,7 @@ class _AcmeParser(object):
     prefix = attr.ib()
     directory = attr.ib()
 
-    def parseStreamServer(self, reactor, *args, **kwargs):
+    def parseStreamServer(self, reactor, *args, **kwargs):  # noqa
         """
         .. seealso:: `_parse`
         """
