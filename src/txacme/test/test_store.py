@@ -1,9 +1,12 @@
 import pem
 from fixtures import TempDir
+from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import ContainsDict, Equals, Is, IsInstance
-from testtools.twistedsupport import succeeded
+from testtools.matchers import (
+    ContainsDict, Equals, FileExists, Is, IsInstance, Not)
+from testtools.twistedsupport import (
+    AsynchronousDeferredRunTestForBrokenTwisted, succeeded)
 from twisted.python.filepath import FilePath
 
 from txacme.store import DirectoryStore
@@ -91,14 +94,72 @@ class _StoreTestsMixin(object):
             failed_with(IsInstance(KeyError)))
 
 
-class DirectoryStoreTests(_StoreTestsMixin, TestCase):
+class _DirectoryStoreTestsMixin(object):
+    def setUp(self):
+        super(_DirectoryStoreTestsMixin, self).setUp()
+        self.temp_dir = FilePath(self.useFixture(TempDir()).path)
+
+    @given(ts.dns_names(), ts.pem_objects(), s.integers())
+    def test_onstore_script(self, server_name, pem_objects, nonce):
+        """
+        .onstore scripts will be run after something is stored, but only if the
+        setting is enabled.
+        """
+        script = self.temp_dir.child(server_name + '.onstore')
+        script.setContent("""\
+#!/bin/sh
+echo >output "%s" "$1"
+        """.strip(' ') % nonce)
+        script.chmod(0o700)
+        d = self.cert_store.store(server_name, pem_objects)
+        return self._check_onstore_script(d, server_name, nonce)
+
+
+class DirectoryStoreTests(
+        _StoreTestsMixin, _DirectoryStoreTestsMixin, TestCase):
     """
     Tests for `txacme.store.DirectoryStore`.
     """
     def setUp(self):
         super(DirectoryStoreTests, self).setUp()
-        temp_dir = self.useFixture(TempDir())
-        self.cert_store = DirectoryStore(FilePath(temp_dir.path))
+        self.cert_store = DirectoryStore(self.temp_dir)
+
+    def _check_onstore_script(self, d, server_name, nonce):
+        self.expectThat(d, succeeded(Is(None)))
+        self.expectThat(self.temp_dir.child('output').path, Not(FileExists()))
+
+
+class DirectoryStoreWithOnstoreScriptsTests(
+        _StoreTestsMixin, _DirectoryStoreTestsMixin, TestCase):
+    """
+    Tests for `txacme.store.DirectoryStore` with onstore_scripts=True.
+    """
+    def setUp(self):
+        super(DirectoryStoreWithOnstoreScriptsTests, self).setUp()
+        self.cert_store = DirectoryStore(self.temp_dir, onstore_scripts=True)
+        self.example_result = self.defaultTestResult()
+
+    def execute_example(self, f):
+        runtest_fac = AsynchronousDeferredRunTestForBrokenTwisted.make_factory(
+            timeout=2)
+
+        class Case(TestCase):
+            def test_example(self):
+                result = f()
+                if callable(result):
+                    result = result()
+                return result
+
+        runtest_fac(Case('test_example')).run(self.example_result)
+
+    def _check_output(self, ign, expected_content):
+        self.assertThat(
+            self.temp_dir.child('output').getContent(),
+            Equals(expected_content))
+
+    def _check_onstore_script(self, d, server_name, nonce):
+        d.addCallback(self._check_output, '%s %s\n' % (nonce, server_name))
+        return d
 
 
 class MemoryStoreTests(_StoreTestsMixin, TestCase):
