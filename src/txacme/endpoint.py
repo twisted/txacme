@@ -138,6 +138,7 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
         for issuing certs.
     :param str pemdir: The path to the certificate directory to use.
     """
+    onstore_scripts = kwargs.pop('onstore', 'false').lower().startswith('t')
     def colon_join(items):
         return ':'.join([item.replace(':', '\\:') for item in items])
     sub = colon_join(list(args) + ['='.join(item) for item in kwargs.items()])
@@ -160,7 +161,7 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
         reactor=reactor,
         directory=directory,
         client_creator=partial(Client.from_url, key=acme_key, alg=RS256),
-        cert_store=DirectoryStore(pem_path),
+        cert_store=DirectoryStore(pem_path, onstore_scripts=onstore_scripts),
         cert_mapping=HostDirectoryMap(pem_path),
         sub_endpoint=serverFromString(reactor, sub))
 
