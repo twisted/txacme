@@ -11,6 +11,7 @@ Contents
 .. toctree::
    :maxdepth: 2
 
+   using
    api-stability
    changelog
    API documentation </api/modules>
