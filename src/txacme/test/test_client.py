@@ -1341,7 +1341,7 @@ class JWSClientTests(TestCase):
                 TestResponse(
                     code=http.FORBIDDEN,
                     content_type=JSON_ERROR_CONTENT_TYPE)),
-            failed_with(IsInstance(errors.ClientError)))
+            failed_with(IsInstance(ServerError)))
 
     def test_check_valid_error(self):
         """
