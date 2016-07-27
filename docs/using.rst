@@ -12,7 +12,7 @@ parsers are provided, under the ``le:`` (Let's Encrypt) and ``lets:`` (Let's
 Encrypt Test in Staging) prefixes. The endpoint takes as parameters a directory
 to store certificates in, and the underlying endpoint to listen on. One might
 use the following command to start a Twisted web server on TCP port 443 and
-store certificates in the `/srv/www/certs` directory:
+store certificates in the ``/srv/www/certs`` directory:
 
 .. code-block:: shell
 
@@ -85,8 +85,8 @@ The `server endpoint`_ is a simple wrapper that combines the functionality of th
 
 The `.ICertificateStore` and `.IResponder` interfaces are the main extension
 points for using the issuing service directly. For example, a custom
-implementation might manage the certificate configuration of a cloud load
-balancer, implementing the ``dns-01`` challenge type by modifying DNS entries
-in the cloud DNS configuration.
+implementation of `.ICertificateStore` might manage the certificate
+configuration of a cloud load balancer, implementing the ``dns-01`` challenge
+type by modifying DNS entries in the cloud DNS configuration.
 
 .. _txsni: https://github.com/glyph/txsni
