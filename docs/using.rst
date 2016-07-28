@@ -1,7 +1,22 @@
 Using txacme
 ============
 
-There are several possible ways to make use of txacme, from a simple endpoint.
+There are several possible ways to make use of txacme:
+
+* An issuing service for keeping certificates in a certificate store up to date;
+
+* A server endpoint, which may be used anywhere an endpoint is accepted, that
+  combines the issuing service with TLS SNI for certificate mapping;
+
+* A server endpoint string parser, which can be used anywhere a server endpoint
+  string es accepted, that produces a server endpoint.
+
+While the server endpoint string parser is a convenient high-level API the
+lower-level APIs (the issuing service and server endpoint) may be useful for
+better integration with existing systems. For example, if the requirements for
+storing certificates were more complex than a directory on a filesystem, one
+might implement a certificate store that communicated with a REST webservice or
+directly with a database and pass an instance of this to the server endpoint.
 
 
 Server endpoint string
