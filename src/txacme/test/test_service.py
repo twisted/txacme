@@ -19,7 +19,7 @@ from testtools.matchers import (
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
     has_no_result, succeeded)
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, succeed
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 
@@ -117,7 +117,7 @@ class AcmeFixture(Fixture):
         self.responder = RecordingResponder(set(), u'tls-sni-01')
         args = dict(
             cert_store=self.cert_store,
-            client=acme_client,
+            client_creator=lambda: succeed(acme_client),
             clock=self.clock,
             responders=[self.responder],
             panic_interval=self._panic_interval,

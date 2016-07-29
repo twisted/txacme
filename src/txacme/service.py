@@ -32,8 +32,11 @@ class AcmeIssuingService(Service):
 
     :param .ICertificateStore cert_store: The certificate store containing the
         certificates to manage.
-    :param ~txacme.client.Client client: The ACME client to use.  Typically
-        constructed with `Client.from_url <txacme.client.Client.from_url>`.
+    :type client_creator: Callable[[], Deferred[`txacme.client.Client`]]
+    :param client_creator: A callable called with no arguments
+        for creating the ACME client.  For example, ``partial(Client.from_url,
+        reactor=reactor, directory=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key,
+        alg=RS256)``.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
 
@@ -59,7 +62,7 @@ class AcmeIssuingService(Service):
         key generation requirements.
     """
     cert_store = attr.ib()
-    _client = attr.ib()
+    _client_creator = attr.ib()
     _clock = attr.ib()
     _responders = attr.ib()
     check_interval = attr.ib(default=timedelta(days=1))
@@ -97,13 +100,13 @@ class AcmeIssuingService(Service):
                         expiring.add(server_name)
             d1 = (
                 gatherResults(
-                    [self._issue_cert(server_name)
+                    [self._with_client(self._issue_cert, server_name)
                      .addErrback(self._panic, server_name)
                      for server_name in panicing],
                     consumeErrors=True)
                 .addCallback(done_panicing))
             d2 = gatherResults(
-                [self._issue_cert(server_name)
+                [self._with_client(self._issue_cert, server_name)
                  .addErrback(
                      lambda f: log.failure(
                          u'Error issuing certificate for: {server_name!r}',
@@ -119,11 +122,17 @@ class AcmeIssuingService(Service):
             self._waiting = []
 
         return (
-            self._register()
+            self._ensure_registered()
             .addCallback(lambda _: self.cert_store.as_dict())
             .addCallback(check))
 
-    def _issue_cert(self, server_name):
+    def _with_client(self, f, *a, **kw):
+        """
+        Construct a client, and perform an operation with it.
+        """
+        return self._client_creator().addCallback(f, *a, **kw)
+
+    def _issue_cert(self, client, server_name):
         """
         Issue a new cert for a particular name.
         """
@@ -142,10 +151,10 @@ class AcmeIssuingService(Service):
                     return responder.stop_responding(response)
 
                 return (
-                    poll_until_valid(authzr, self._clock, self._client)
+                    poll_until_valid(authzr, self._clock, client)
                     .addBoth(tap(stop_responding)))
             return (
-                answer_challenge(authzr, self._client, self._responders)
+                answer_challenge(authzr, client, self._responders)
                 .addCallback(got_challenge))
 
         def got_cert(certr):
@@ -162,29 +171,35 @@ class AcmeIssuingService(Service):
             return objects
 
         return (
-            self._client.request_challenges(fqdn_identifier(server_name))
+            client.request_challenges(fqdn_identifier(server_name))
             .addCallback(answer_and_poll)
-            .addCallback(lambda ign: self._client.request_issuance(
+            .addCallback(lambda ign: client.request_issuance(
                 CertificateRequest(
                     csr=csr_for_names([server_name], key))))
             .addCallback(got_cert)
-            .addCallback(self._client.fetch_chain)
+            .addCallback(client.fetch_chain)
             .addCallback(got_chain)
             .addCallback(partial(self.cert_store.store, server_name)))
 
-    def _register(self):
+    def _ensure_registered(self):
         """
-        Register if needed.
+        Register if needed."
         """
-        def _registered(ign):
-            self._registered = True
         if self._registered:
             return succeed(None)
         else:
-            return (
-                self._client.register()
-                .addCallback(self._client.agree_to_tos)
-                .addCallback(_registered))
+            return self._with_client(self._register)
+
+    def _register(self, client):
+        """
+        Register and agree to the TOS.
+        """
+        def _registered(ign):
+            self._registered = True
+        return (
+            client.register()
+            .addCallback(client.agree_to_tos)
+            .addCallback(_registered))
 
     def when_certs_valid(self):
         """
