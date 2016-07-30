@@ -84,6 +84,8 @@ class AcmeIssuingService(Service):
         Check all of the certs in the store, and reissue any that are expired
         or close to expiring.
         """
+        log.info('Starting scheduled check for expired certificates.')
+
         def check(certs):
             panicing = set()
             expiring = set()
@@ -98,6 +100,13 @@ class AcmeIssuingService(Service):
                         panicing.add(server_name)
                     elif until_expiry <= self.reissue_interval:
                         expiring.add(server_name)
+
+            log.info(
+                'Found {panicing_count:d} overdue / expired and '
+                '{expiring_count:d} expiring certificates.',
+                panicing_count=len(panicing),
+                expiring_count=len(expiring))
+
             d1 = (
                 gatherResults(
                     [self._with_client(self._issue_cert, server_name)
@@ -139,6 +148,9 @@ class AcmeIssuingService(Service):
         """
         Issue a new cert for a particular name.
         """
+        log.info(
+            'Requesting a certificate for {server_name!r}.',
+            server_name=server_name)
         key = self._generate_key()
         objects = [
             Key(key.private_bytes(
@@ -171,6 +183,9 @@ class AcmeIssuingService(Service):
         def got_chain(chain):
             for certr in chain:
                 got_cert(certr)
+            log.info(
+                'Received certificate for {server_name!r}.',
+                server_name=server_name)
             return objects
 
         return (
