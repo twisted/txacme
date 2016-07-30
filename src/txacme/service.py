@@ -121,7 +121,10 @@ class AcmeIssuingService(Service):
         return (
             self._register()
             .addCallback(lambda _: self.cert_store.as_dict())
-            .addCallback(check))
+            .addCallback(check)
+            .addErrback(
+                lambda f: log.failure(
+                    u'Error in scheduled certificate check.', f)))
 
     def _issue_cert(self, server_name):
         """

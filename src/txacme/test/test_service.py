@@ -19,7 +19,7 @@ from testtools.matchers import (
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
     has_no_result, succeeded)
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, fail
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 
@@ -89,6 +89,14 @@ class HangingClient(object):
     """
     def __getattr__(self, name):
         return lambda *a, **kw: Deferred()
+
+
+class FailingClient(object):
+    """
+    Test client that always fails.
+    """
+    def __getattr__(self, name):
+        return lambda *a, **kw: fail(RuntimeError('Tried to do something'))
 
 
 class AcmeFixture(Fixture):
@@ -302,6 +310,19 @@ class AcmeIssuingServiceTests(TestCase):
                     MatchesListwise([IsInstance(Failure), Equals(u'a' * 100)]),
                     ]))
             self.assertThat(fixture.responder.challenges, HasLength(0))
+
+    @run_test_with(AsynchronousDeferredRunTest)
+    def test_timer_errors(self):
+        """
+        If the timed check fails (for example, because registration fails), the
+        error should be caught and logged.
+        """
+        with AcmeFixture(client=FailingClient()) as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.service._check_certs(),
+                succeeded(Always()))
+            self.assertThat(flush_logged_errors(), HasLength(2))
 
     def test_starting_stopping_cancellation(self):
         """
