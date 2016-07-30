@@ -9,7 +9,7 @@ import attr
 from acme.jose import JWKRSA, RS256
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from twisted.internet.defer import gatherResults, maybeDeferred
+from twisted.internet.defer import maybeDeferred
 from twisted.internet.endpoints import serverFromString
 from twisted.internet.interfaces import (
     IListeningPort, IStreamServerEndpoint, IStreamServerEndpointStringParser)
