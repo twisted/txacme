@@ -9,7 +9,7 @@ import attr
 from acme.jose import JWKRSA, RS256
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from twisted.internet.defer import gatherResults, maybeDeferred
+from twisted.internet.defer import maybeDeferred
 from twisted.internet.endpoints import serverFromString
 from twisted.internet.interfaces import (
     IListeningPort, IStreamServerEndpoint, IStreamServerEndpointStringParser)
@@ -96,11 +96,11 @@ class AutoTLSEndpoint(object):
         """
         Start an issuing service, and wait until initial issuing is complete.
         """
-        def _got_client_and_port(cp):
-            client, port = cp
+        def _got_port(port):
             self.service = AcmeIssuingService(
                 cert_store=self.cert_store,
-                client=client,
+                client_creator=partial(
+                    self.client_creator, self.reactor, self.directory),
                 clock=self.reactor,
                 responders=[responder],
                 check_interval=self.check_interval,
@@ -117,16 +117,13 @@ class AutoTLSEndpoint(object):
         responder = TLSSNI01Responder()
         sni_map = SNIMap(responder.wrap_host_map(self.cert_mapping))
         return (
-            gatherResults([
-                self.client_creator(self.reactor, self.directory),
-                maybeDeferred(
-                    self.sub_endpoint.listen,
-                    TLSMemoryBIOFactory(
-                        contextFactory=sni_map,
-                        isClient=False,
-                        wrappedFactory=protocolFactory)),
-                ], consumeErrors=True)
-            .addCallback(_got_client_and_port))
+            maybeDeferred(
+                self.sub_endpoint.listen,
+                TLSMemoryBIOFactory(
+                    contextFactory=sni_map,
+                    isClient=False,
+                    wrappedFactory=protocolFactory))
+            .addCallback(_got_port))
 
 
 def _parse(reactor, directory, pemdir, *args, **kwargs):
