@@ -23,7 +23,7 @@ from txacme.challenges import TLSSNI01Responder
 from txacme.client import Client
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.store import DirectoryStore
-from txacme.util import generate_private_key
+from txacme.util import check_directory_url_type, generate_private_key
 
 
 @implementer(IListeningPort)
@@ -81,7 +81,8 @@ class AutoTLSEndpoint(object):
         key generation requirements.
     """
     reactor = attr.ib()
-    directory = attr.ib()
+    directory = attr.ib(
+        validator=lambda inst, a, value: check_directory_url_type(value))
     client_creator = attr.ib()
     cert_store = attr.ib()
     cert_mapping = attr.ib()

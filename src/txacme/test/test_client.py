@@ -268,6 +268,15 @@ class ClientTests(TestCase):
     """
     :class:`.Client` provides a client interface for the ACME API.
     """
+    def test_directory_url_type(self):
+        """
+        `~txacme.client.Client.from_url` expects a ``twisted.python.url.URL``
+        instance for the ``url`` argument.
+        """
+        with ExpectedException(TypeError):
+            Client.from_url(
+                reactor, '/wrong/kind/of/directory', key=RSA_KEY_512)
+
     def test_register_missing_next(self):
         """
         If the directory does not return a ``"next"`` link, a
