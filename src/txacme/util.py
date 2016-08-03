@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from OpenSSL import crypto
 from twisted.internet.defer import maybeDeferred
+from twisted.python.url import URL
 
 
 def generate_private_key(key_type):
@@ -167,7 +168,19 @@ def clock_now(clock):
     return datetime.utcfromtimestamp(clock.seconds())
 
 
+def check_directory_url_type(url):
+    """
+    Check that ``url`` is a ``twisted.python.url.URL`` instance, raising
+    `TypeError` if it isn't.
+    """
+    if not isinstance(url, URL):
+        raise TypeError(
+            'ACME directory URL should be a twisted.python.url.URL, '
+            'got {!r} instead'.format(url))
+
+
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
     'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap',
-    'encode_csr', 'decode_csr', 'csr_for_names', 'clock_now']
+    'encode_csr', 'decode_csr', 'csr_for_names', 'clock_now',
+    'check_directory_url_type']
