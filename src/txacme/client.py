@@ -25,7 +25,7 @@ from txacme.logging import (
     LOG_HTTP_PARSE_LINKS, LOG_JWS_ADD_NONCE, LOG_JWS_CHECK_RESPONSE,
     LOG_JWS_GET, LOG_JWS_GET_NONCE, LOG_JWS_HEAD, LOG_JWS_POST,
     LOG_JWS_REQUEST, LOG_JWS_SIGN)
-from txacme.util import tap
+from txacme.util import check_directory_url_type, tap
 
 
 LETSENCRYPT_DIRECTORY = URL.fromText(
@@ -128,6 +128,7 @@ class Client(object):
         action = LOG_ACME_CONSUME_DIRECTORY(
             url=url, key_type=key.typ, alg=alg.name)
         with action.context():
+            check_directory_url_type(url)
             jws_client = _default_client(jws_client, reactor, key, alg)
             return (
                 DeferredContext(jws_client.get(url.asText()))

@@ -64,7 +64,7 @@ class ClientTestsMixin(object):
         with action.context():
             return (
                 DeferredContext(
-                   self.client.request_challenges(fqdn_identifier(host)))
+                    self.client.request_challenges(fqdn_identifier(host)))
                 .addActionFinish())
 
     def _test_poll_pending(self, auth):

@@ -4,7 +4,7 @@ Tests for `txacme.endpoint`.
 from datetime import datetime
 
 from fixtures import TempDir
-from testtools import TestCase
+from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     Equals, Is, IsInstance, MatchesAll, MatchesPredicate, MatchesStructure)
 from testtools.twistedsupport import succeeded
@@ -58,11 +58,25 @@ class EndpointTests(TestCase):
         client = FakeClient(RSA_KEY_512, clock)
         self.endpoint = AutoTLSEndpoint(
             reactor=clock,
-            directory=None,
+            directory=URL(u'https://example.com/'),
             client_creator=lambda reactor, directory: succeed(client),
             cert_store=MemoryStore(),
             cert_mapping={},
             sub_endpoint=DummyEndpoint())
+
+    def test_directory_url_type(self):
+        """
+        `~txacme.endpoint.AutoTLSEndpoint` expects a ``twisted.python.url.URL``
+        instance for the ``directory`` argument.
+        """
+        with ExpectedException(TypeError):
+            AutoTLSEndpoint(
+                reactor=Clock(),
+                directory='/wrong/kind/of/directory',
+                client_creator=None,
+                cert_store=None,
+                cert_mapping={},
+                sub_endpoint=DummyEndpoint())
 
     def test_listen_starts_service(self):
         """
