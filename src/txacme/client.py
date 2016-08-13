@@ -547,6 +547,7 @@ def answer_challenge(authzr, client, responders):
     """
     responder, challb = _find_supported_challenge(authzr, responders)
     response = challb.response(client.key)
+
     def _stop_responding():
         return maybeDeferred(
             responder.stop_responding,

@@ -6,17 +6,12 @@ from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import (
-    Always, Contains, Equals, HasLength, Is, MatchesListwise, MatchesPredicate,
-    MatchesStructure, Not)
-from testtools.twistedsupport import succeeded
-from twisted.internet.defer import execute
+from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.interfaces import IResponder
-from txacme.test import strategies as ts
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
 
@@ -177,4 +172,4 @@ class MergingProxyTests(TestCase):
             Equals(proxy.get(key) is not None))
 
 
-__all__ = ['ResponderTests']
+__all__ = ['TLSResponderTests', 'MergingProxyTests']
