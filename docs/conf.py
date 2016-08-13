@@ -305,13 +305,13 @@ texinfo_documents = [
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3/',
                (None, 'python-objects.inv')),
-    'acme': ('https://acme-python.readthedocs.org/en/latest/',
+    'acme': ('https://acme-python.readthedocs.io/en/latest/',
              (None, 'acme-objects.inv')),
-    'twisted': ('https://twisted.readthedocs.org/en/latest/',
+    'twisted': ('https://twisted.readthedocs.io/en/latest/',
                 (None, 'twisted-objects.inv')),
     'cryptography': ('https://cryptography.io/en/latest/',
                      (None, 'cryptography-objects.inv')),
-    'pem': ('https://pem.readthedocs.org/en/stable/',
+    'pem': ('https://pem.readthedocs.io/en/stable/',
             (None, 'pem-objects.inv')),
     }
 
