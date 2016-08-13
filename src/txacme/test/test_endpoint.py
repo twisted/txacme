@@ -6,7 +6,8 @@ from datetime import datetime
 from fixtures import TempDir
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    Equals, Is, IsInstance, MatchesAll, MatchesPredicate, MatchesStructure)
+    Always, Equals, Is, IsInstance, MatchesAll, MatchesPredicate,
+    MatchesStructure)
 from testtools.twistedsupport import succeeded
 from twisted.internet.defer import succeed
 from twisted.internet.interfaces import (
@@ -24,7 +25,7 @@ from zope.interface.verify import verifyObject
 from txacme.client import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 from txacme.endpoint import _AcmeParser, AutoTLSEndpoint
 from txacme.store import DirectoryStore
-from txacme.test.test_client import Always, RSA_KEY_512
+from txacme.test.test_client import RSA_KEY_512
 from txacme.testing import FakeClient, MemoryStore
 
 

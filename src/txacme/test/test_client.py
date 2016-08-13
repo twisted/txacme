@@ -12,9 +12,9 @@ from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, ContainsDict, Equals, Is, IsInstance,
-    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
-    Mismatch, Not, StartsWith)
+    AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
+    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure, Mismatch,
+    Never, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
@@ -80,27 +80,6 @@ RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
 ).private_key(default_backend())
 
 RSA_KEY_512 = jose.JWKRSA(key=RSA_KEY_512_RAW)
-
-
-class Always(object):
-    """Always matches."""
-
-    def __str__(self):
-        return 'Always()'
-
-    def match(self, value):
-        return None
-
-
-class Never(object):
-    """Never matches."""
-
-    def __str__(self):
-        return 'Never()'
-
-    def match(self, value):
-        return Mismatch(
-            u'Inevitable mismatch on %r' % (value,))
 
 
 class Nearly(object):
