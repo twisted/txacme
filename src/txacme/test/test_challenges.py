@@ -172,4 +172,4 @@ class MergingProxyTests(TestCase):
             Equals(proxy.get(key) is not None))
 
 
-__all__ = ['TLSResponderTests', 'MergingProxyTests']
+__all__ = ['TLSResponderTests']
