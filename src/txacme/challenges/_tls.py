@@ -1,7 +1,5 @@
 """
-Implementations of ACME challenge mechanisms.
-
-.. seealso:: `acme.challenges`
+``tls-sni-01`` challenge implementation.
 """
 from collections import Mapping
 
@@ -44,7 +42,7 @@ class _MergingMappingProxy(Mapping):
 @implementer(IResponder)
 class TLSSNI01Responder(object):
     """
-    A tls-sni-01 challenge responder for txsni.
+    A ``tls-sni-01`` challenge responder for txsni.
     """
     challenge_type = u'tls-sni-01'
 
@@ -65,7 +63,7 @@ class TLSSNI01Responder(object):
         return _MergingMappingProxy(
             underlay=host_map, overlay=self._challenge_options)
 
-    def start_responding(self, response):
+    def start_responding(self, server_name, challenge, response):
         """
         Put a context into the mapping.
         """
@@ -77,7 +75,7 @@ class TLSSNI01Responder(object):
             certificate=cert_cryptography_to_pyopenssl(cert),
             privateKey=key_cryptography_to_pyopenssl(pkey))
 
-    def stop_responding(self, response):
+    def stop_responding(self, server_name, challenge, response):
         """
         Remove a context from the mapping.
         """

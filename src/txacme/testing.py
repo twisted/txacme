@@ -173,10 +173,10 @@ class NullResponder(object):
     """
     challenge_type = attr.ib()
 
-    def start_responding(self, challenge):
+    def start_responding(self, server_name, challenge, response):
         pass
 
-    def stop_responding(self, challenge):
+    def stop_responding(self, server_name, challenge, response):
         pass
 
 

@@ -547,10 +547,21 @@ def answer_challenge(authzr, client, responders):
     """
     responder, challb = _find_supported_challenge(authzr, responders)
     response = challb.response(client.key)
+
+    def _stop_responding():
+        return maybeDeferred(
+            responder.stop_responding,
+            authzr.body.identifier.value,
+            challb,
+            response)
     return (
-        maybeDeferred(responder.start_responding, response)
+        maybeDeferred(
+            responder.start_responding,
+            authzr.body.identifier.value,
+            challb,
+            response)
         .addCallback(lambda _: client.answer_challenge(challb, response))
-        .addCallback(lambda _: (responder, response))
+        .addCallback(lambda _: _stop_responding)
         )
 
 

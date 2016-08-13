@@ -13,8 +13,8 @@ from hypothesis.extra.datetime import datetimes
 from pem import Certificate, RSAPrivateKey
 from testtools import run_test_with, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, AllMatch, Equals, GreaterThan, HasLength,
-    Is, IsInstance, MatchesAny, MatchesDict, MatchesListwise,
+    AfterPreprocessing, AllMatch, Always, Equals, GreaterThan,
+    HasLength, Is, IsInstance, MatchesAny, MatchesDict, MatchesListwise,
     MatchesStructure, Not)
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
@@ -26,7 +26,7 @@ from twisted.python.failure import Failure
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.test import strategies as ts
 from txacme.test.test_client import (
-    Always, RecordingResponder, RSA_KEY_512, RSA_KEY_512_RAW)
+    RecordingResponder, RSA_KEY_512, RSA_KEY_512_RAW)
 from txacme.testing import FakeClient, MemoryStore
 
 

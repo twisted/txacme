@@ -159,15 +159,10 @@ class AcmeIssuingService(Service):
                 encryption_algorithm=serialization.NoEncryption()))]
 
         def answer_and_poll(authzr):
-            def got_challenge(r):
-                responder, response = r
-
-                def stop_responding(result):
-                    return responder.stop_responding(response)
-
+            def got_challenge(stop_responding):
                 return (
                     poll_until_valid(authzr, self._clock, client)
-                    .addBoth(tap(stop_responding)))
+                    .addBoth(tap(lambda _: stop_responding())))
             return (
                 answer_challenge(authzr, client, self._responders)
                 .addCallback(got_challenge))

@@ -20,10 +20,14 @@ class IResponder(Interface):
         example, ``u'tls-sni-01'``.
         """)
 
-    def start_responding(response):
+    def start_responding(server_name, challenge, response):
         """
         Start responding for a particular challenge.
 
+        :param str server_name: The server name for which the challenge is
+            being completed.
+        :param challenge: The `acme.challenges` challenge object; the exact
+            type of this object depends on the challenge type.
         :param response: The `acme.challenges` response object; the exact type
             of this object depends on the challenge type.
 
@@ -31,7 +35,7 @@ class IResponder(Interface):
         :return: A deferred firing when the challenge is ready to be verified.
         """
 
-    def stop_responding(server_name):
+    def stop_responding(server_name, challenge, response):
         """
         Stop responding for a particular challenge.
 
@@ -39,6 +43,10 @@ class IResponder(Interface):
         explicit cleanup; implementations should not rely on this method always
         being called.
 
+        :param str server_name: The server name for which the challenge is
+            being completed.
+        :param challenge: The `acme.challenges` challenge object; the exact
+            type of this object depends on the challenge type.
         :param response: The `acme.challenges` response object; the exact type
             of this object depends on the challenge type.
         """

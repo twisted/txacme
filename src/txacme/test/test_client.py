@@ -12,16 +12,16 @@ from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, ContainsDict, Equals, Is, IsInstance,
-    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure,
-    Mismatch, Not, StartsWith)
+    AfterPreprocessing, Always, ContainsDict, Equals, HasLength, Is,
+    IsInstance, MatchesAll, MatchesListwise, MatchesPredicate,
+    MatchesStructure, Mismatch, Never, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
     _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import CancelledError, fail, maybeDeferred, succeed
+from twisted.internet.defer import CancelledError, fail, succeed
 from twisted.internet.task import Clock
 from twisted.python.compat import _PY3
 from twisted.python.url import URL
@@ -80,27 +80,6 @@ RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
 ).private_key(default_backend())
 
 RSA_KEY_512 = jose.JWKRSA(key=RSA_KEY_512_RAW)
-
-
-class Always(object):
-    """Always matches."""
-
-    def __str__(self):
-        return 'Always()'
-
-    def match(self, value):
-        return None
-
-
-class Never(object):
-    """Never matches."""
-
-    def __str__(self):
-        return 'Never()'
-
-    def match(self, value):
-        return Mismatch(
-            u'Inevitable mismatch on %r' % (value,))
 
 
 class Nearly(object):
@@ -257,10 +236,10 @@ class RecordingResponder(object):
     challenges = attr.ib()
     challenge_type = attr.ib()
 
-    def start_responding(self, challenge):
+    def start_responding(self, server_name, challenge, response):
         self.challenges.add(challenge)
 
-    def stop_responding(self, challenge):
+    def stop_responding(self, server_name, challenge, response):
         self.challenges.discard(challenge)
 
 
@@ -991,8 +970,12 @@ class ClientTests(TestCase):
             u'token': u'IlirfxKKXAsHtmzK29Pj8A',
             u'type': u'tls-sni-01',
             u'status': u'pending'})
+        identifier_json = {u'type': u'dns',
+                           u'value': u'example.com'}
+        identifier = messages.Identifier.from_json(identifier_json)
         authzr = messages.AuthorizationResource(
             body=messages.Authorization(
+                identifier=identifier,
                 challenges=[challb],
                 combinations=[[0]]))
         sequence = RequestSequence(
@@ -1026,12 +1009,12 @@ class ClientTests(TestCase):
         with sequence.consume(self.fail):
             d = answer_challenge(authzr, client, [responder])
             self.assertThat(d, succeeded(Always()))
-            _, response = d.result
+            stop_responding = d.result
             self.assertThat(
                 list(challenges),
-                MatchesListwise([Is(response)]))
+                HasLength(1))
             self.assertThat(
-                maybeDeferred(responder.stop_responding, response),
+                stop_responding(),
                 succeeded(Always()))
             self.assertThat(challenges, Equals(set()))
 
