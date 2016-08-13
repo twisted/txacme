@@ -38,6 +38,6 @@ It’s rigorously tested on Python 2.7, 3.4+, and PyPy.
 
 .. _Twisted: https://twistedmatrix.com/trac/
 
-.. _Read the Docs: https://txacme.readthedocs.org/
+.. _Read the Docs: https://txacme.readthedocs.io/
 
 .. _GitHub: https://github.com/mithrandi/txacme
