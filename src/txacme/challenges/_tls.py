@@ -1,7 +1,5 @@
 """
-Implementations of ACME challenge mechanisms.
-
-.. seealso:: `acme.challenges`
+``tls-sni-01`` challenge implementation.
 """
 from collections import Mapping
 

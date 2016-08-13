@@ -9,7 +9,8 @@ from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import _MergingMappingProxy, TLSSNI01Responder
+from txacme.challenges import TLSSNI01Responder
+from txacme.challenges._tls import _MergingMappingProxy
 from txacme.interfaces import IResponder
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
