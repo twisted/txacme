@@ -140,7 +140,7 @@ class ClientTestsMixin(object):
             .addCallback(tap(lambda _: self._test_poll_pending(self.authzr)))
             .addCallback(self._test_answer_challenge)
             .addCallback(tap(lambda _: self._test_poll(self.authzr)))
-            .addCallback(lambda r: self.responder.stop_responding(r[1]))
+            .addCallback(lambda stop_responding: stop_responding())
             .addCallback(lambda _: self._test_issue(self.HOST))
             .addCallback(self._test_chain)
             .addActionFinish())

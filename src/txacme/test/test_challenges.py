@@ -6,25 +6,31 @@ from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from testtools.matchers import (
+    Always, Contains, Equals, HasLength, Is, MatchesListwise, MatchesPredicate,
+    MatchesStructure, Not)
+from testtools.twistedsupport import succeeded
+from twisted.internet.defer import execute
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.interfaces import IResponder
+from txacme.test import strategies as ts
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
 
-class ResponderTests(TestCase):
+class _CommonResponderTests(object):
     """
-    `.TLSSNI01Responder` is a responder for tls-sni-01 challenges that works
-    with txsni.
+    Common properties which every responder implementation should satisfy.
     """
     def test_interface(self):
         """
         The `.IResponder` interface is correctly implemented.
         """
-        verifyObject(IResponder, TLSSNI01Responder())
+        responder = self._responder_factory()
+        verifyObject(IResponder, responder)
+        self.assertThat(responder.challenge_type, Equals(self._challenge_type))
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
@@ -33,10 +39,20 @@ class ResponderTests(TestCase):
         Calling ``stop_responding`` when we are not responding for a server
         name does nothing.
         """
-        challenge = challenges.TLSSNI01(token=token)
+        challenge = self._challenge_factory(token=token)
         response = challenge.response(RSA_KEY_512)
-        responder = TLSSNI01Responder()
-        responder.stop_responding(response)
+        responder = self._responder_factory()
+        responder.stop_responding(u'example.com', challenge, response)
+
+
+class TLSResponderTests(_CommonResponderTests, TestCase):
+    """
+    `.TLSSNI01Responder` is a responder for tls-sni-01 challenges that works
+    with txsni.
+    """
+    _challenge_factory = challenges.TLSSNI01
+    _responder_factory = TLSSNI01Responder
+    _challenge_type = u'tls-sni-01'
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
@@ -55,18 +71,18 @@ class ResponderTests(TestCase):
         wrapped_host_map = responder.wrap_host_map(host_map)
 
         self.assertThat(wrapped_host_map, Not(Contains(server_name)))
-        responder.start_responding(response)
+        responder.start_responding(u'example.com', challenge, response)
         self.assertThat(
             wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
         # Starting twice before stopping doesn't break things
-        responder.start_responding(response)
+        responder.start_responding(u'example.com', challenge, response)
         self.assertThat(
             wrapped_host_map.get(server_name.encode('utf-8')).certificate,
             MatchesPredicate(response.verify_cert, '%r does not verify'))
 
-        responder.stop_responding(response)
+        responder.stop_responding(u'example.com', challenge, response)
         self.assertThat(wrapped_host_map, Not(Contains(server_name)))
 
 
