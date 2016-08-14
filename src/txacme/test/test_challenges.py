@@ -6,12 +6,17 @@ from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from testtools.matchers import (
+    Always, Contains, EndsWith, Equals, HasLength, Is, MatchesListwise,
+    MatchesPredicate, MatchesStructure, Not)
+from testtools.twistedsupport import succeeded
+from twisted.internet.defer import execute, maybeDeferred
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import TLSSNI01Responder
+from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.interfaces import IResponder
+from txacme.test import strategies as ts
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 
 
@@ -37,7 +42,13 @@ class _CommonResponderTests(object):
         challenge = self._challenge_factory(token=token)
         response = challenge.response(RSA_KEY_512)
         responder = self._responder_factory()
-        responder.stop_responding(u'example.com', challenge, response)
+        self.assertThat(
+            maybeDeferred(
+                responder.stop_responding,
+                u'example.com',
+                challenge,
+                response),
+            succeeded(Always()))
 
 
 class TLSResponderTests(_CommonResponderTests, TestCase):
@@ -83,7 +94,7 @@ class TLSResponderTests(_CommonResponderTests, TestCase):
 
 class MergingProxyTests(TestCase):
     """
-    `._MergingMappingProxy` merges two mappings together.
+    ``_MergingMappingProxy`` merges two mappings together.
     """
     @example(underlay={}, overlay={}, key=u'foo')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
@@ -172,4 +183,72 @@ class MergingProxyTests(TestCase):
             Equals(proxy.get(key) is not None))
 
 
-__all__ = ['TLSResponderTests']
+class LibcloudResponderTests(_CommonResponderTests, TestCase):
+    """
+    `.LibcloudDNSResponder` implements a responder for dns-01 challenges using
+    libcloud on the backend.
+    """
+    _challenge_factory = challenges.DNS01
+    _challenge_type = u'dns-01'
+
+    def _responder_factory(self, zone_name=u'example.com'):
+        responder = LibcloudDNSResponder.create(
+            reactor=None,
+            driver_name='dummy',
+            username='ignored',
+            password='ignored',
+            zone_name=zone_name,
+            settle_delay=0.0)
+        responder._driver.create_zone(zone_name)
+        responder._ensure_thread_pool_started = lambda: None
+        responder._defer = execute
+        return responder
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_start_responding(self, token, subdomain, zone_name):
+        """
+        Calling ``start_responding`` causes an appropriate TXT record to be
+        created.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}'.format(subdomain, zone_name)
+        zone = responder._driver.list_zones()[0]
+
+        self.assertThat(
+            responder._driver.list_records(zone),
+            HasLength(0))
+        self.assertThat(
+            responder.start_responding(server_name, challenge, response),
+            succeeded(Always()))
+        self.assertThat(
+            responder._driver.list_records(zone),
+            MatchesListwise([
+                MatchesStructure(
+                    name=EndsWith(subdomain),
+                    type=Equals('TXT'),
+                    )]))
+
+        # Starting twice before stopping doesn't break things
+        self.assertThat(
+            responder.start_responding(server_name, challenge, response),
+            succeeded(Always()))
+        self.assertThat(
+            responder._driver.list_records(zone),
+            HasLength(1))
+
+        self.assertThat(
+            responder.stop_responding(server_name, challenge, response),
+            succeeded(Always()))
+        self.assertThat(
+            responder._driver.list_records(zone),
+            HasLength(0))
+
+
+__all__ = ['TLSResponderTests', 'MergingProxyTests', 'LibcloudResponderTests']

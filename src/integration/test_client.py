@@ -14,6 +14,7 @@ from eliot.twisted import DeferredContext
 from twisted.internet import reactor
 from twisted.internet.defer import succeed
 from twisted.internet.endpoints import serverFromString
+from twisted.internet.interfaces import IReactorTime
 from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
 from twisted.trial.unittest import TestCase
@@ -21,8 +22,9 @@ from twisted.web.resource import Resource
 from twisted.web.server import Site
 from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
+from zope.interface import implementer
 
-from txacme.challenges import TLSSNI01Responder
+from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
 from txacme.client import (
     answer_challenge, Client, fqdn_identifier, LETSENCRYPT_STAGING_DIRECTORY,
     poll_until_valid)
@@ -31,7 +33,19 @@ from txacme.testing import FakeClient, NullResponder
 from txacme.util import csr_for_names, generate_private_key, tap
 
 
-HOST = u'acme-testing.mithrandi.net'
+@implementer(IReactorTime)
+class BrokenClock(object):
+    """
+    A clock implementation that always runs everything immediately.
+    """
+    def seconds(self):
+        return 0
+
+    def callLater(self, delay, callable, *args, **kw):  # noqa
+        callable(*args, **kw)
+
+    def getDelayedCalls(self):  # noqa
+        return ()
 
 
 class ClientTestsMixin(object):
@@ -145,7 +159,7 @@ class ClientTestsMixin(object):
             .addCallback(self._test_chain)
             .addActionFinish())
 
-    def test_registration(self):
+    def test_issuing(self):
         action = start_action(action_type=u'integration')
         with action.context():
             return self._test_registration()
@@ -165,10 +179,10 @@ def _getenv(name, default=None):
     return value
 
 
-class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
+class LetsEncryptStagingTLSSNI01Tests(ClientTestsMixin, TestCase):
     """
     Tests using the real ACME client against the Let's Encrypt staging
-    environment.
+    environment, and the tls-sni-01 challenge.
 
     You must set $ACME_HOST to a hostname that will, when connected to on port
     443, reach a listening socket opened by the tests on $ACME_ENDPOINT.
@@ -205,6 +219,43 @@ class LetsEncryptStagingTests(ClientTestsMixin, TestCase):
                 .addActionFinish())
 
 
+class LetsEncryptStagingLibcloudTests(ClientTestsMixin, TestCase):
+    """
+    Tests using the real ACME client against the Let's Encrypt staging
+    environment, and the dns-01 challenge.
+
+    You must set $ACME_HOST to a hostname that will be used for the challenge,
+    and $LIBCLOUD_PROVIDER, $LIBCLOUD_USERNAME, $LIBCLOUD_PASSWORD, and
+    $LIBCLOUD_ZONE to the appropriate values for the DNS provider to complete
+    the challenge with.
+    """
+    HOST = _getenv(u'ACME_HOST')
+    PROVIDER = _getenv(u'LIBCLOUD_PROVIDER')
+    USERNAME = _getenv(u'LIBCLOUD_USERNAME')
+    PASSWORD = _getenv(u'LIBCLOUD_PASSWORD')
+    ZONE = _getenv(u'LIBCLOUD_ZONE')
+
+    if None in (HOST, PROVIDER, USERNAME, PASSWORD, ZONE):
+        skip = 'Must provide $ACME_HOST and $LIBCLOUD_*'
+
+    def _create_client(self, key):
+        return (
+            Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
+            .addCallback(tap(
+                lambda client: self.addCleanup(
+                    client._client._treq._agent._pool.closeCachedConnections)))
+            )
+
+    def _create_responder(self):
+        with start_action(action_type=u'integration:create_responder'):
+            return LibcloudDNSResponder.create(
+                reactor,
+                self.PROVIDER,
+                self.USERNAME,
+                self.PASSWORD,
+                self.ZONE)
+
+
 class FakeClientTests(ClientTestsMixin, TestCase):
     """
     Tests against our verified fake.
@@ -218,4 +269,4 @@ class FakeClientTests(ClientTestsMixin, TestCase):
         return succeed(NullResponder(u'tls-sni-01'))
 
 
-__all__ = ['LetsEncryptStagingTests', 'FakeClientTests']
+__all__ = ['LetsEncryptStagingTLSSNI01Tests', 'FakeClientTests']
