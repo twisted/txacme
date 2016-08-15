@@ -7,17 +7,18 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import (
-    Always, Contains, EndsWith, Equals, HasLength, Is, MatchesListwise,
-    MatchesPredicate, MatchesStructure, Not)
+    Always, Contains, EndsWith, Equals, HasLength, Is, IsInstance, MatchesAll,
+    MatchesListwise, MatchesPredicate, MatchesStructure, Not)
 from testtools.twistedsupport import succeeded
 from twisted.internet.defer import execute, maybeDeferred
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
+from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 from txacme.test import strategies as ts
-from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
+from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
 
 
 class _CommonResponderTests(object):
@@ -221,14 +222,12 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         server_name = u'{}.{}'.format(subdomain, zone_name)
         zone = responder._driver.list_zones()[0]
 
-        self.assertThat(
-            responder._driver.list_records(zone),
-            HasLength(0))
+        self.assertThat(zone.list_records(), HasLength(0))
         self.assertThat(
             responder.start_responding(server_name, challenge, response),
             succeeded(Always()))
         self.assertThat(
-            responder._driver.list_records(zone),
+            zone.list_records(),
             MatchesListwise([
                 MatchesStructure(
                     name=EndsWith(subdomain),
@@ -239,16 +238,61 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         self.assertThat(
             responder.start_responding(server_name, challenge, response),
             succeeded(Always()))
-        self.assertThat(
-            responder._driver.list_records(zone),
-            HasLength(1))
+        self.assertThat(zone.list_records(), HasLength(1))
 
         self.assertThat(
             responder.stop_responding(server_name, challenge, response),
             succeeded(Always()))
+        self.assertThat(zone.list_records(), HasLength(0))
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_wrong_zone(self, token, subdomain, zone_name):
+        """
+        Trying to respond for a domain not in the configured zone results in a
+        `.NotInZone` exception.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}.junk'.format(subdomain, zone_name)
         self.assertThat(
-            responder._driver.list_records(zone),
-            HasLength(0))
+            maybeDeferred(
+                responder.start_responding, server_name, challenge, response),
+            failed_with(MatchesAll(
+                IsInstance(NotInZone),
+                MatchesStructure(
+                    server_name=EndsWith(server_name),
+                    zone_name=Equals(zone_name)))))
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_missing_zone(self, token, subdomain, zone_name):
+        """
+        `.ZoneNotFound` is raised if the configured zone cannot be found at the
+        configured provider.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}'.format(subdomain, zone_name)
+        for zone in responder._driver.list_zones():
+            zone.delete()
+        self.assertThat(
+            maybeDeferred(
+                responder.start_responding, server_name, challenge, response),
+            failed_with(MatchesAll(
+                IsInstance(ZoneNotFound),
+                MatchesStructure(
+                    zone_name=Equals(zone_name)))))
 
 
 __all__ = ['TLSResponderTests', 'MergingProxyTests', 'LibcloudResponderTests']

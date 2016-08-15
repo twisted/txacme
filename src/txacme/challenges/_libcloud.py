@@ -8,6 +8,7 @@ from twisted.internet.threads import deferToThreadPool
 from twisted.python.threadpool import ThreadPool
 from zope.interface import implementer
 
+from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 
 
@@ -18,8 +19,9 @@ def _split_zone(server_name, zone_name):
     :param str server_name: The full DNS label.
     :param str zone_name: The zone name suffix.
     """
-    if not server_name.endswith(zone_name):
-        raise ValueError(server_name, zone_name)
+    if not (server_name == zone_name or
+            server_name.endswith(u'.' + zone_name)):
+        raise NotInZone(server_name=server_name, zone_name=zone_name)
     return server_name[:-len(zone_name)].rstrip(u'.')
 
 
@@ -32,7 +34,7 @@ def _get_existing(driver, zone_name, subdomain, validation):
         in driver.list_zones()
         if z.domain == zone_name]
     if len(zones) == 0:
-        raise ValueError('zone not found')
+        raise ZoneNotFound(zone_name=zone_name)
     else:
         zone = zones[0]
     existing = [
