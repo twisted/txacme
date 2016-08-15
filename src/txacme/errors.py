@@ -3,6 +3,7 @@ Exception types for txacme.
 """
 import attr
 
+
 @attr.s
 class NotInZone(ValueError):
     """
