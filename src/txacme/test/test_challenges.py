@@ -7,9 +7,12 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from treq.testing import RequestSequence as treq_RequestSequence
+from treq.testing import (
+    _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import TLSSNI01Responder
+from txacme.challenges import HTTP01Responder, TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.interfaces import IResponder
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
@@ -172,4 +175,41 @@ class MergingProxyTests(TestCase):
             Equals(proxy.get(key) is not None))
 
 
-__all__ = ['TLSResponderTests']
+class HTTPResponderTests(_CommonResponderTests, TestCase):
+    """
+    `.HTTP01Responder` is a responder for http-01 challenges.
+    """
+    _challenge_factory = challenges.HTTP01
+    _responder_factory = HTTP01Responder
+    _challenge_type = u'http-01'
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
+    def test_start_responding(self, token):
+        """
+        Calling ``start_responding`` makes an appropriate resource available.
+        """
+        challenge = challenges.HTTP01(token=token)
+        response = challenge.response(RSA_KEY_512)
+
+        responder = HTTP01Responder()
+        resource = responder.resource
+
+        self.assertThat(resource.listNames(), Not(Contains(challenge.path)))
+        responder.start_responding(u'example.com', challenge, response)
+        # TODO: Actually test response value
+        self.assertThat(
+            resource.getStaticEntity(challenge.path).response,
+            Is(response))
+
+        # Starting twice before stopping doesn't break things
+        responder.start_responding(u'example.com', challenge, response)
+        # TODO: Actually test response value
+        self.assertThat(
+            resource.getStaticEntity(challenge.path).response, Is(response))
+
+        responder.stop_responding(u'example.com', challenge, response)
+        self.assertThat(resource.getStaticEntity(challenge.path), Is(None))
+
+
+__all__ = ['HTTPResponderTests', 'TLSResponderTests']
