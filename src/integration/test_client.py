@@ -14,7 +14,6 @@ from eliot.twisted import DeferredContext
 from twisted.internet import reactor
 from twisted.internet.defer import succeed
 from twisted.internet.endpoints import serverFromString
-from twisted.internet.interfaces import IReactorTime
 from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
 from twisted.trial.unittest import TestCase
@@ -22,7 +21,6 @@ from twisted.web.resource import Resource
 from twisted.web.server import Site
 from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
-from zope.interface import implementer
 
 from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
 from txacme.client import (
@@ -31,21 +29,6 @@ from txacme.client import (
 from txacme.messages import CertificateRequest
 from txacme.testing import FakeClient, NullResponder
 from txacme.util import csr_for_names, generate_private_key, tap
-
-
-@implementer(IReactorTime)
-class BrokenClock(object):
-    """
-    A clock implementation that always runs everything immediately.
-    """
-    def seconds(self):
-        return 0
-
-    def callLater(self, delay, callable, *args, **kw):  # noqa
-        callable(*args, **kw)
-
-    def getDelayedCalls(self):  # noqa
-        return ()
 
 
 class ClientTestsMixin(object):
