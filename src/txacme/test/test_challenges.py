@@ -20,6 +20,9 @@ from txacme.interfaces import IResponder
 from txacme.test import strategies as ts
 from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
 
+# A random example token for the challenge tests that need one
+EXAMPLE_TOKEN = b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU'
+
 
 class _CommonResponderTests(object):
     """
@@ -33,7 +36,7 @@ class _CommonResponderTests(object):
         verifyObject(IResponder, responder)
         self.assertThat(responder.challenge_type, Equals(self._challenge_type))
 
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
+    @example(token=EXAMPLE_TOKEN)
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
     def test_stop_responding_already_stopped(self, token):
         """
@@ -205,7 +208,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         responder._defer = execute
         return responder
 
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+    @example(token=EXAMPLE_TOKEN,
              subdomain=u'acme-testing',
              zone_name=u'example.com')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
@@ -245,7 +248,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             succeeded(Always()))
         self.assertThat(zone.list_records(), HasLength(0))
 
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+    @example(token=EXAMPLE_TOKEN,
              subdomain=u'acme-testing',
              zone_name=u'example.com')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
@@ -269,7 +272,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
                     server_name=EndsWith(server_name),
                     zone_name=Equals(zone_name)))))
 
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU',
+    @example(token=EXAMPLE_TOKEN,
              subdomain=u'acme-testing',
              zone_name=u'example.com')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
