@@ -89,7 +89,7 @@ class LibcloudDNSResponder(object):
         """
         return cls(
             reactor=reactor,
-            thread_pool=ThreadPool(minthreads=1, maxthreads=5),
+            thread_pool=ThreadPool(minthreads=1, maxthreads=1),
             driver=get_driver(driver_name)(username, password),
             zone_name=zone_name,
             settle_delay=settle_delay)
