@@ -171,12 +171,11 @@ class LetsEncryptStagingTLSSNI01Tests(ClientTestsMixin, TestCase):
     443, reach a listening socket opened by the tests on $ACME_ENDPOINT.
     """
     HOST = _getenv(u'ACME_HOST')
-    ENDPOINT = _getenv(u'ACME_ENDPOINT', u'tcp:443')
-    if not _PY3:
+    ENDPOINT = _getenv(u'ACME_ENDPOINT')
+    if None in [HOST, ENDPOINT]:
+        skip = 'Must provide $ACME_HOST and $ACME_ENDPOINT'
+    elif not _PY3:
         ENDPOINT = ENDPOINT.encode('utf-8')
-
-    if HOST is None:
-        skip = 'Must provide $ACME_HOST'
 
     def _create_client(self, key):
         return (
