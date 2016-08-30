@@ -2,8 +2,10 @@ import pem
 from fixtures import TempDir
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import ContainsDict, Equals, Is, IsInstance
+from operator import methodcaller
+from testtools.matchers import AllMatch, ContainsDict, Equals, Is, IsInstance, AfterPreprocessing
 from testtools.twistedsupport import succeeded
+from twisted.python.compat import unicode
 from twisted.python.filepath import FilePath
 
 from txacme.store import DirectoryStore
@@ -90,6 +92,21 @@ class _StoreTestsMixin(object):
             self.cert_store.get(server_name),
             failed_with(IsInstance(KeyError)))
 
+    @example(u'example.com', EXAMPLE_PEM_OBJECTS)
+    @given(ts.dns_names(), ts.pem_objects())
+    def test_unicode_keys(self, server_name, pem_objects):
+        """
+        The keys of the dict returned by ``as_dict`` are ``unicode``.
+        """
+        self.assertThat(
+            self.cert_store.store(server_name, pem_objects),
+            succeeded(Is(None)))
+        self.assertThat(
+            self.cert_store.as_dict(),
+            succeeded(AfterPreprocessing(
+                methodcaller('keys'),
+                AllMatch(IsInstance(unicode)))))
+
 
 class DirectoryStoreTests(_StoreTestsMixin, TestCase):
     """
@@ -99,6 +116,13 @@ class DirectoryStoreTests(_StoreTestsMixin, TestCase):
         super(DirectoryStoreTests, self).setUp()
         temp_dir = self.useFixture(TempDir())
         self.cert_store = DirectoryStore(FilePath(temp_dir.path))
+
+    def test_filepath_mode(self):
+        """
+        The given ``FilePath`` is always converted to text mode.
+        """
+        store = DirectoryStore(FilePath(b'bytesbytesbytes'))
+        self.assertThat(store.path.path, IsInstance(unicode))
 
 
 class MemoryStoreTests(_StoreTestsMixin, TestCase):
