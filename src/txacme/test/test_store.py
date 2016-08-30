@@ -1,9 +1,11 @@
+from operator import methodcaller
+
 import pem
 from fixtures import TempDir
 from hypothesis import example, given
 from testtools import TestCase
-from operator import methodcaller
-from testtools.matchers import AllMatch, ContainsDict, Equals, Is, IsInstance, AfterPreprocessing
+from testtools.matchers import (
+    AfterPreprocessing, AllMatch, ContainsDict, Equals, Is, IsInstance)
 from testtools.twistedsupport import succeeded
 from twisted.python.compat import unicode
 from twisted.python.filepath import FilePath
