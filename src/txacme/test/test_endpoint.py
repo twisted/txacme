@@ -47,12 +47,12 @@ class DummyEndpoint(object):
         return succeed(DummyPort())
 
 
-class AutoTLSEndpointTests(TestCase):
+class EndpointTests(TestCase):
     """
     Tests for `~txacme.endpoint.AutoTLSEndpoint`.
     """
     def setUp(self):
-        super(AutoTLSEndpointTests, self).setUp()
+        super(EndpointTests, self).setUp()
         clock = Clock()
         clock.rightNow = (
             datetime.now() - datetime(1970, 1, 1)).total_seconds()
@@ -171,4 +171,4 @@ class PluginTests(TestCase):
         self.assertThat(key_path.getContent(), Equals(key_data))
 
 
-__all__ = ['AutoTLSEndpointTests', 'PluginTests']
+__all__ = ['EndpointTests', 'PluginTests']
