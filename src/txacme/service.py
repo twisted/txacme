@@ -35,7 +35,7 @@ class AcmeIssuingService(Service):
     :type client_creator: Callable[[], Deferred[`txacme.client.Client`]]
     :param client_creator: A callable called with no arguments
         for creating the ACME client.  For example, ``partial(Client.from_url,
-        reactor=reactor, directory=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key,
+        reactor=reactor, url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key,
         alg=RS256)``.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
