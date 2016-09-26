@@ -7,6 +7,9 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from treq.testing import StubTreq
+from twisted.internet.defer import inlineCallbacks
+from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import HTTP01Responder, TLSSNI01Responder
@@ -182,6 +185,7 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
+    @inlineCallbacks
     def test_start_responding(self, token):
         """
         Calling ``start_responding`` makes an appropriate resource available.
@@ -190,24 +194,38 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
         response = challenge.response(RSA_KEY_512)
 
         responder = HTTP01Responder()
-        resource = responder.resource
+
+        challenge_resource = Resource()
+        challenge_resource.putChild(u'acme-challenge', responder.resource)
+        root = Resource()
+        root.putChild(u'.well-known', challenge_resource)
+        client = StubTreq(root)
 
         encoded_token = challenge.encode('token')
+        challenge_url = 'http://example.com/.well-known/acme-challenge/%s' % (
+            encoded_token,)
 
-        self.assertThat(resource.listNames(), Not(Contains(encoded_token)))
+        http_response = yield client.get(challenge_url)
+        self.assertThat(http_response.code, Equals(404))
+
         responder.start_responding(u'example.com', challenge, response)
-        # TODO: Actually test response value
-        self.assertThat(resource.getStaticEntity(encoded_token).data,
+        http_response = yield client.get(challenge_url)
+        self.assertThat(http_response.code, Equals(200))
+        self.assertThat(http_response.headers.getRawHeaders(u'content-type'),
+                        Equals(['text/plain']))
+
+        response_text = yield http_response.text()
+        self.assertThat(response_text,
                         Equals(response.key_authorization.encode()))
 
         # Starting twice before stopping doesn't break things
         responder.start_responding(u'example.com', challenge, response)
-        # TODO: Actually test response value
-        self.assertThat(resource.getStaticEntity(encoded_token).data,
-                        Equals(response.key_authorization.encode()))
+        http_response = yield client.get(challenge_url)
+        self.assertThat(http_response.code, Equals(200))
 
         responder.stop_responding(u'example.com', challenge, response)
-        self.assertThat(resource.getStaticEntity(encoded_token), Is(None))
+        http_response = yield client.get(challenge_url)
+        self.assertThat(http_response.code, Equals(404))
 
 
 __all__ = ['HTTPResponderTests', 'TLSResponderTests']
