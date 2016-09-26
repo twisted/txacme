@@ -1,14 +1,18 @@
 """
 Tests for `txacme.challenges`.
 """
+from operator import methodcaller
+
 from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
-from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
+from testtools.matchers import (
+    AfterPreprocessing, Contains, Equals, Is, MatchesAll, MatchesPredicate,
+    MatchesStructure, Not)
+from testtools.twistedsupport import succeeded
 from treq.testing import StubTreq
-from twisted.internet.defer import inlineCallbacks
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
@@ -185,7 +189,6 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
-    @inlineCallbacks
     def test_start_responding(self, token):
         """
         Calling ``start_responding`` makes an appropriate resource available.
@@ -205,27 +208,28 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
         challenge_url = 'http://example.com/.well-known/acme-challenge/%s' % (
             encoded_token,)
 
-        http_response = yield client.get(challenge_url)
-        self.assertThat(http_response.code, Equals(404))
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(404))))
 
         responder.start_responding(u'example.com', challenge, response)
-        http_response = yield client.get(challenge_url)
-        self.assertThat(http_response.code, Equals(200))
-        self.assertThat(http_response.headers.getRawHeaders(u'content-type'),
-                        Equals(['text/plain']))
-
-        response_text = yield http_response.text()
-        self.assertThat(response_text,
-                        Equals(response.key_authorization.encode()))
+        self.assertThat(client.get(challenge_url), succeeded(MatchesAll(
+            MatchesStructure(
+                code=Equals(200),
+                headers=AfterPreprocessing(
+                    methodcaller('getRawHeaders', u'content-type'),
+                    Equals([u'text/plain']))),
+            AfterPreprocessing(methodcaller('text'), succeeded(
+                Equals(response.key_authorization.encode())))
+        )))
 
         # Starting twice before stopping doesn't break things
         responder.start_responding(u'example.com', challenge, response)
-        http_response = yield client.get(challenge_url)
-        self.assertThat(http_response.code, Equals(200))
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(200))))
 
         responder.stop_responding(u'example.com', challenge, response)
-        http_response = yield client.get(challenge_url)
-        self.assertThat(http_response.code, Equals(404))
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(404))))
 
 
 __all__ = ['HTTPResponderTests', 'TLSResponderTests']
