@@ -41,3 +41,8 @@ It’s rigorously tested on Python 2.7, 3.4+, and PyPy.
 .. _Read the Docs: https://txacme.readthedocs.io/
 
 .. _GitHub: https://github.com/mithrandi/txacme
+
+
+.. image:: https://badges.gitter.im/txacme/Lobby.svg
+   :alt: Join the chat at https://gitter.im/txacme/Lobby
+   :target: https://gitter.im/txacme/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
