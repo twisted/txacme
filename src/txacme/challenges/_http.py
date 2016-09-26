@@ -1,8 +1,8 @@
 """
 ``http-01`` challenge implementation.
 """
-from twisted.web.http import OK
 from twisted.web.resource import Resource
+from twisted.web.static import Data
 
 from zope.interface import implementer
 
@@ -23,25 +23,17 @@ class HTTP01Responder(object):
         """
         Add the child resource.
         """
-        self.resource.putChild(challenge.path, _HTTP01Resource(response))
+        self.resource.putChild(
+            challenge.encode('token'),
+            Data(self.response.key_authorization.encode(), 'text/plain'))
 
     def stop_responding(self, server_name, challenge, response):
         """
         Remove the child resource.
         """
-        if self.resource.getStaticEntity(challenge.path) is not None:
-            self.resource.delEntity(challenge.path)
-
-
-class _HTTP01Resource(Resource):
-    isLeaf = True
-
-    def __init__(self, response):
-        self.response = response
-
-    def render_GET(self, request):
-        request.setResponseCode(OK)
-        return self.response.key_authorization.encode()
+        encoded_token = challenge.encode('token')
+        if self.resource.getStaticEntity(encoded_token) is not None:
+            self.resource.delEntity(encoded_token)
 
 
 __all__ = ['HTTP01Responder']
