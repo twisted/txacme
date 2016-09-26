@@ -23,7 +23,7 @@ from zope.interface import implementer
 from zope.interface.verify import verifyObject
 
 from txacme.client import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
-from txacme.endpoint import _AcmeParser, AutoHTTPEndpoint, AutoTLSEndpoint
+from txacme.endpoint import _AcmeParser, AutoTLSEndpoint
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
 from txacme.testing import FakeClient, MemoryStore
@@ -82,61 +82,6 @@ class AutoTLSEndpointTests(TestCase):
     def test_listen_starts_service(self):
         """
         ``AutoTLSEndpoint.listen`` starts an ``AcmeIssuingService``.  Stopping
-        the port stops the service.
-        """
-        factory = Factory()
-        d = self.endpoint.listen(factory)
-        self.assertThat(
-            d,
-            succeeded(
-                MatchesPredicate(
-                    IListeningPort.providedBy,
-                    '%r does not provide IListeningPort')))
-        port = d.result
-        self.assertThat(
-            self.endpoint.service,
-            MatchesStructure(running=Equals(True)))
-        self.assertThat(port.stopListening(), succeeded(Always()))
-        self.assertThat(
-            self.endpoint.service,
-            MatchesStructure(running=Equals(False)))
-
-
-class AutoHTTPEndpointTests(TestCase):
-    """
-    Tests for `~txacme.endpoint.AutoHTTPEndpoint`.
-    """
-    def setUp(self):
-        super(AutoHTTPEndpointTests, self).setUp()
-        clock = Clock()
-        clock.rightNow = (
-            datetime.now() - datetime(1970, 1, 1)).total_seconds()
-        client = FakeClient(RSA_KEY_512, clock)
-        self.endpoint = AutoHTTPEndpoint(
-            reactor=clock,
-            directory=URL(u'https://example.com/'),
-            client_creator=lambda reactor, directory: succeed(client),
-            cert_store=MemoryStore(),
-            cert_mapping={},
-            sub_endpoint=DummyEndpoint())
-
-    def test_directory_url_type(self):
-        """
-        `~txacme.endpoint.AutoHTTPEndpoint` expects a
-        ``twisted.python.url.URL`` instance for the ``directory`` argument.
-        """
-        with ExpectedException(TypeError):
-            AutoHTTPEndpoint(
-                reactor=Clock(),
-                directory='/wrong/kind/of/directory',
-                client_creator=None,
-                cert_store=None,
-                cert_mapping={},
-                sub_endpoint=DummyEndpoint())
-
-    def test_listen_starts_service(self):
-        """
-        ``AutoHTTPEndpoint.listen`` starts an ``AcmeIssuingService``.  Stopping
         the port stops the service.
         """
         factory = Factory()
