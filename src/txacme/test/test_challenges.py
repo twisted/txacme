@@ -7,9 +7,6 @@ from hypothesis import strategies as s
 from hypothesis import example, given
 from testtools import TestCase
 from testtools.matchers import Contains, Equals, Is, MatchesPredicate, Not
-from treq.testing import RequestSequence as treq_RequestSequence
-from treq.testing import (
-    _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import HTTP01Responder, TLSSNI01Responder
