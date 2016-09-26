@@ -195,21 +195,22 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
         responder = HTTP01Responder()
         resource = responder.resource
 
-        self.assertThat(resource.listNames(), Not(Contains(challenge.path)))
+        encoded_token = challenge.encode('token')
+
+        self.assertThat(resource.listNames(), Not(Contains(encoded_token)))
         responder.start_responding(u'example.com', challenge, response)
         # TODO: Actually test response value
-        self.assertThat(
-            resource.getStaticEntity(challenge.path).response,
-            Is(response))
+        self.assertThat(resource.getStaticEntity(encoded_token).data,
+                        Equals(response.key_authorization.encode()))
 
         # Starting twice before stopping doesn't break things
         responder.start_responding(u'example.com', challenge, response)
         # TODO: Actually test response value
-        self.assertThat(
-            resource.getStaticEntity(challenge.path).response, Is(response))
+        self.assertThat(resource.getStaticEntity(encoded_token).data,
+                        Equals(response.key_authorization.encode()))
 
         responder.stop_responding(u'example.com', challenge, response)
-        self.assertThat(resource.getStaticEntity(challenge.path), Is(None))
+        self.assertThat(resource.getStaticEntity(encoded_token), Is(None))
 
 
 __all__ = ['HTTPResponderTests', 'TLSResponderTests']
