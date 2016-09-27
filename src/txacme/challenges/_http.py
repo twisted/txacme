@@ -24,14 +24,14 @@ class HTTP01Responder(object):
         Add the child resource.
         """
         self.resource.putChild(
-            challenge.encode('token'),
+            challenge.encode('token').encode('utf-8'),
             Data(response.key_authorization.encode(), 'text/plain'))
 
     def stop_responding(self, server_name, challenge, response):
         """
         Remove the child resource.
         """
-        encoded_token = challenge.encode('token')
+        encoded_token = challenge.encode('token').encode('utf-8')
         if self.resource.getStaticEntity(encoded_token) is not None:
             self.resource.delEntity(encoded_token)
 

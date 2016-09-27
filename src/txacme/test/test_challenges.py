@@ -200,9 +200,9 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
         responder = HTTP01Responder()
 
         challenge_resource = Resource()
-        challenge_resource.putChild(u'acme-challenge', responder.resource)
+        challenge_resource.putChild(b'acme-challenge', responder.resource)
         root = Resource()
-        root.putChild(u'.well-known', challenge_resource)
+        root.putChild(b'.well-known', challenge_resource)
         client = StubTreq(root)
 
         encoded_token = challenge.encode('token')
@@ -219,7 +219,7 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
                 headers=AfterPreprocessing(
                     methodcaller('getRawHeaders', u'content-type'),
                     Equals([u'text/plain']))),
-            AfterPreprocessing(methodcaller('text'), succeeded(
+            AfterPreprocessing(methodcaller('content'), succeeded(
                 Equals(response.key_authorization.encode())))
         )))
 
