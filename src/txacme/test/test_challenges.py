@@ -217,8 +217,8 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
             MatchesStructure(
                 code=Equals(200),
                 headers=AfterPreprocessing(
-                    methodcaller('getRawHeaders', u'content-type'),
-                    Equals([u'text/plain']))),
+                    methodcaller('getRawHeaders', b'content-type'),
+                    Equals([b'text/plain']))),
             AfterPreprocessing(methodcaller('content'), succeeded(
                 Equals(response.key_authorization.encode())))
         )))
