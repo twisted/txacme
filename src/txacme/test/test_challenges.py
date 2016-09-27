@@ -13,6 +13,7 @@ from testtools.matchers import (
     MatchesStructure, Not)
 from testtools.twistedsupport import succeeded
 from treq.testing import StubTreq
+from twisted.python.url import URL
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
@@ -205,8 +206,8 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
         client = StubTreq(root)
 
         encoded_token = challenge.encode('token')
-        challenge_url = 'http://example.com/.well-known/acme-challenge/%s' % (
-            encoded_token,)
+        challenge_url = URL(host=u'example.com', path=[
+            u'.well-known', u'acme-challenge', encoded_token]).asText()
 
         self.assertThat(client.get(challenge_url),
                         succeeded(MatchesStructure(code=Equals(404))))
