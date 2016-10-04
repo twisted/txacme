@@ -25,7 +25,7 @@ class HTTP01Responder(object):
         """
         self.resource.putChild(
             challenge.encode('token').encode('utf-8'),
-            Data(response.key_authorization.encode(), 'text/plain'))
+            Data(response.key_authorization.encode('utf-8'), 'text/plain'))
 
     def stop_responding(self, server_name, challenge, response):
         """

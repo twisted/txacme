@@ -220,7 +220,7 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
                     methodcaller('getRawHeaders', b'content-type'),
                     Equals([b'text/plain']))),
             AfterPreprocessing(methodcaller('content'), succeeded(
-                Equals(response.key_authorization.encode())))
+                Equals(response.key_authorization.encode('utf-8'))))
         )))
 
         # Starting twice before stopping doesn't break things
