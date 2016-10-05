@@ -179,8 +179,15 @@ def check_directory_url_type(url):
             'got {!r} instead'.format(url))
 
 
+def const(x):
+    """
+    Return a constant function.
+    """
+    return lambda: x
+
+
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
     'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap',
     'encode_csr', 'decode_csr', 'csr_for_names', 'clock_now',
-    'check_directory_url_type']
+    'check_directory_url_type', 'const']

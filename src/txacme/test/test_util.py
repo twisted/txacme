@@ -19,8 +19,8 @@ from txacme.test import strategies as ts
 from txacme.test.matchers import ValidForName
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
-    cert_cryptography_to_pyopenssl, csr_for_names, decode_csr, encode_csr,
-    generate_private_key, generate_tls_sni_01_cert,
+    cert_cryptography_to_pyopenssl, const, csr_for_names, decode_csr,
+    encode_csr, generate_private_key, generate_tls_sni_01_cert,
     key_cryptography_to_pyopenssl)
 
 
@@ -160,4 +160,15 @@ class CSRTests(TestCase):
                         u'san.too.long.invalid')]))))
 
 
-__all__ = ['GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests']
+class ConstTests(TestCase):
+    """
+    `~txacme.util.const` returns a function that always returns a constant
+    value.
+    """
+    @given(s.integers())
+    def test_const(self, x):
+        self.assertThat(const(x)(), Equals(x))
+
+
+__all__ = [
+    'GeneratePrivateKeyTests', 'GenerateCertTests', 'CSRTests', 'ConstTests']

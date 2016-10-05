@@ -6,27 +6,45 @@ from operator import methodcaller
 from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
-from hypothesis import example, given
+from hypothesis import assume, example, given
 from testtools import TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Contains, Equals, Is, MatchesAll, MatchesPredicate,
+    AfterPreprocessing, Always, Contains, EndsWith, Equals, HasLength,
+    Is, IsInstance, MatchesAll, MatchesListwise, MatchesPredicate,
     MatchesStructure, Not)
 from testtools.twistedsupport import succeeded
 from treq.testing import StubTreq
+from twisted._threads import createMemoryWorker
+from twisted.internet.defer import maybeDeferred
 from twisted.python.url import URL
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import HTTP01Responder, TLSSNI01Responder
+from txacme.challenges import (
+    HTTP01Responder, LibcloudDNSResponder, TLSSNI01Responder)
+from txacme.challenges._libcloud import _daemon_thread
 from txacme.challenges._tls import _MergingMappingProxy
+from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
-from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
+from txacme.test import strategies as ts
+from txacme.test.doubles import SynchronousReactorThreads
+from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
+
+
+# A random example token for the challenge tests that need one
+EXAMPLE_TOKEN = b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU'
 
 
 class _CommonResponderTests(object):
     """
     Common properties which every responder implementation should satisfy.
     """
+    def _do_one_thing(self):
+        """
+        Make the underlying fake implementation do one thing (eg.  simulate one
+        network request, one threaded task execution).
+        """
+
     def test_interface(self):
         """
         The `.IResponder` interface is correctly implemented.
@@ -35,7 +53,7 @@ class _CommonResponderTests(object):
         verifyObject(IResponder, responder)
         self.assertThat(responder.challenge_type, Equals(self._challenge_type))
 
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
+    @example(token=EXAMPLE_TOKEN)
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
     def test_stop_responding_already_stopped(self, token):
         """
@@ -45,7 +63,13 @@ class _CommonResponderTests(object):
         challenge = self._challenge_factory(token=token)
         response = challenge.response(RSA_KEY_512)
         responder = self._responder_factory()
-        responder.stop_responding(u'example.com', challenge, response)
+        d = maybeDeferred(
+            responder.stop_responding,
+            u'example.com',
+            challenge,
+            response)
+        self._do_one_thing()
+        self.assertThat(d, succeeded(Always()))
 
 
 class TLSResponderTests(_CommonResponderTests, TestCase):
@@ -91,7 +115,7 @@ class TLSResponderTests(_CommonResponderTests, TestCase):
 
 class MergingProxyTests(TestCase):
     """
-    `._MergingMappingProxy` merges two mappings together.
+    ``_MergingMappingProxy`` merges two mappings together.
     """
     @example(underlay={}, overlay={}, key=u'foo')
     @given(underlay=s.dictionaries(s.text(), s.builds(object)),
@@ -233,4 +257,208 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
                         succeeded(MatchesStructure(code=Equals(404))))
 
 
-__all__ = ['HTTPResponderTests', 'TLSResponderTests']
+class LibcloudResponderTests(_CommonResponderTests, TestCase):
+    """
+    `.LibcloudDNSResponder` implements a responder for dns-01 challenges using
+    libcloud on the backend.
+    """
+    _challenge_factory = challenges.DNS01
+    _challenge_type = u'dns-01'
+
+    def _responder_factory(self, zone_name=u'example.com'):
+        responder = LibcloudDNSResponder.create(
+            reactor=SynchronousReactorThreads(),
+            driver_name='dummy',
+            username='ignored',
+            password='ignored',
+            zone_name=zone_name,
+            settle_delay=0.0)
+        if zone_name is not None:
+            responder._driver.create_zone(zone_name)
+        responder.thread_pool, self._perform = createMemoryWorker()
+        return responder
+
+    def _do_one_thing(self):
+        return self._perform()
+
+    def test_daemon_threads(self):
+        """
+        ``_daemon_thread`` creates thread objects with ``daemon`` set.
+        """
+        thread = _daemon_thread()
+        self.assertThat(thread, MatchesStructure(daemon=Equals(True)))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_start_responding(self, token, subdomain, zone_name):
+        """
+        Calling ``start_responding`` causes an appropriate TXT record to be
+        created.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}'.format(subdomain, zone_name)
+        zone = responder._driver.list_zones()[0]
+
+        self.assertThat(zone.list_records(), HasLength(0))
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
+        self.assertThat(
+            zone.list_records(),
+            MatchesListwise([
+                MatchesStructure(
+                    name=EndsWith(u'.' + subdomain),
+                    type=Equals('TXT'),
+                    )]))
+
+        # Starting twice before stopping doesn't break things
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
+        self.assertThat(zone.list_records(), HasLength(1))
+
+        d = responder.stop_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
+        self.assertThat(zone.list_records(), HasLength(0))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_wrong_zone(self, token, subdomain, zone_name):
+        """
+        Trying to respond for a domain not in the configured zone results in a
+        `.NotInZone` exception.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}.junk'.format(subdomain, zone_name)
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
+        self.assertThat(
+            d,
+            failed_with(MatchesAll(
+                IsInstance(NotInZone),
+                MatchesStructure(
+                    server_name=EndsWith(u'.' + server_name),
+                    zone_name=Equals(zone_name)))))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             zone_name=u'example.com')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name=ts.dns_names())
+    def test_missing_zone(self, token, subdomain, zone_name):
+        """
+        `.ZoneNotFound` is raised if the configured zone cannot be found at the
+        configured provider.
+        """
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=zone_name)
+        server_name = u'{}.{}'.format(subdomain, zone_name)
+        for zone in responder._driver.list_zones():
+            zone.delete()
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
+        self.assertThat(
+            d,
+            failed_with(MatchesAll(
+                IsInstance(ZoneNotFound),
+                MatchesStructure(
+                    zone_name=Equals(zone_name)))))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             extra=u'extra',
+             zone_name1=u'example.com',
+             zone_name2=u'example.org')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           extra=ts.dns_names(),
+           zone_name1=ts.dns_names(),
+           zone_name2=ts.dns_names())
+    def test_auto_zone(self, token, subdomain, extra, zone_name1, zone_name2):
+        """
+        If the configured zone_name is ``None``, the zone will be guessed by
+        finding the longest zone that is a suffix of the server name.
+        """
+        zone_name3 = extra + u'.' + zone_name1
+        zone_name4 = extra + u'.' + zone_name2
+        server_name = u'{}.{}.{}'.format(subdomain, extra, zone_name1)
+        assume(
+            len({server_name, zone_name1, zone_name2, zone_name3, zone_name4})
+            == 5)
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=None)
+        zone1 = responder._driver.create_zone(zone_name1)
+        zone2 = responder._driver.create_zone(zone_name2)
+        zone3 = responder._driver.create_zone(zone_name3)
+        zone4 = responder._driver.create_zone(zone_name4)
+        self.assertThat(zone1.list_records(), HasLength(0))
+        self.assertThat(zone2.list_records(), HasLength(0))
+        self.assertThat(zone3.list_records(), HasLength(0))
+        self.assertThat(zone4.list_records(), HasLength(0))
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
+        self.assertThat(zone1.list_records(), HasLength(0))
+        self.assertThat(zone2.list_records(), HasLength(0))
+        self.assertThat(
+            zone3.list_records(),
+            MatchesListwise([
+                MatchesStructure(
+                    name=EndsWith(u'.' + subdomain),
+                    type=Equals('TXT'),
+                    )]))
+        self.assertThat(zone4.list_records(), HasLength(0))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             zone_name1=u'example.com',
+             zone_name2=u'example.org')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name1=ts.dns_names(),
+           zone_name2=ts.dns_names())
+    def test_auto_zone_missing(self, token, subdomain, zone_name1, zone_name2):
+        """
+        If the configured zone_name is ``None``, and no matching zone is found,
+        ``NotInZone`` is raised.
+        """
+        server_name = u'{}.{}'.format(subdomain, zone_name1)
+        assume(not server_name.endswith(zone_name2))
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=None)
+        zone = responder._driver.create_zone(zone_name2)
+        self.assertThat(zone.list_records(), HasLength(0))
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
+        self.assertThat(
+            d,
+            failed_with(MatchesAll(
+                IsInstance(NotInZone),
+                MatchesStructure(
+                    server_name=EndsWith(u'.' + server_name),
+                    zone_name=Is(None)))))
+
+
+__all__ = [
+    'HTTPResponderTests', 'TLSResponderTests', 'MergingProxyTests',
+    'LibcloudResponderTests']
