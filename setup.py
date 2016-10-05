@@ -44,7 +44,7 @@ setup(
         ],
     install_requires=[
         'Twisted[tls]>=15.5.0',
-        'acme>=0.4.0',
+        'acme>=0.9.0',
         'attrs',
         'eliot>=0.8.0',
         'pem>=16.1.0',
