@@ -1,19 +1,26 @@
 """
 Tests for `txacme.challenges`.
 """
+from operator import methodcaller
+
 from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import TestCase
 from testtools.matchers import (
-    Always, Contains, EndsWith, Equals, HasLength, Is, IsInstance, MatchesAll,
-    MatchesListwise, MatchesPredicate, MatchesStructure, Not)
+    AfterPreprocessing, Always, Contains, EndsWith, Equals, HasLength,
+    Is, IsInstance, MatchesAll, MatchesListwise, MatchesPredicate,
+    MatchesStructure, Not)
 from testtools.twistedsupport import succeeded
+from treq.testing import StubTreq
 from twisted.internet.defer import execute, maybeDeferred
+from twisted.python.url import URL
+from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
+from txacme.challenges import (
+    HTTP01Responder, LibcloudDNSResponder, TLSSNI01Responder)
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
@@ -186,6 +193,59 @@ class MergingProxyTests(TestCase):
         self.assertThat(
             key in proxy,
             Equals(proxy.get(key) is not None))
+
+
+class HTTPResponderTests(_CommonResponderTests, TestCase):
+    """
+    `.HTTP01Responder` is a responder for http-01 challenges.
+    """
+    _challenge_factory = challenges.HTTP01
+    _responder_factory = HTTP01Responder
+    _challenge_type = u'http-01'
+
+    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
+    def test_start_responding(self, token):
+        """
+        Calling ``start_responding`` makes an appropriate resource available.
+        """
+        challenge = challenges.HTTP01(token=token)
+        response = challenge.response(RSA_KEY_512)
+
+        responder = HTTP01Responder()
+
+        challenge_resource = Resource()
+        challenge_resource.putChild(b'acme-challenge', responder.resource)
+        root = Resource()
+        root.putChild(b'.well-known', challenge_resource)
+        client = StubTreq(root)
+
+        encoded_token = challenge.encode('token')
+        challenge_url = URL(host=u'example.com', path=[
+            u'.well-known', u'acme-challenge', encoded_token]).asText()
+
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(404))))
+
+        responder.start_responding(u'example.com', challenge, response)
+        self.assertThat(client.get(challenge_url), succeeded(MatchesAll(
+            MatchesStructure(
+                code=Equals(200),
+                headers=AfterPreprocessing(
+                    methodcaller('getRawHeaders', b'content-type'),
+                    Equals([b'text/plain']))),
+            AfterPreprocessing(methodcaller('content'), succeeded(
+                Equals(response.key_authorization.encode('utf-8'))))
+        )))
+
+        # Starting twice before stopping doesn't break things
+        responder.start_responding(u'example.com', challenge, response)
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(200))))
+
+        responder.stop_responding(u'example.com', challenge, response)
+        self.assertThat(client.get(challenge_url),
+                        succeeded(MatchesStructure(code=Equals(404))))
 
 
 class LibcloudResponderTests(_CommonResponderTests, TestCase):
@@ -375,4 +435,6 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
                     zone_name=Is(None)))))
 
 
-__all__ = ['TLSResponderTests', 'MergingProxyTests', 'LibcloudResponderTests']
+__all__ = [
+    'HTTPResponderTests', 'TLSResponderTests', 'MergingProxyTests',
+    'LibcloudResponderTests']
