@@ -12,6 +12,7 @@ from zope.interface import implementer
 
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
+from txacme.util import const
 
 
 def _daemon_thread(*a, **kw):
@@ -135,7 +136,7 @@ class LibcloudDNSResponder(object):
         """
         return cls(
             reactor=reactor,
-            thread_pool=pool(lambda: 1, threadFactory=_daemon_thread),
+            thread_pool=pool(const(1), threadFactory=_daemon_thread),
             driver=get_driver(driver_name)(username, password),
             zone_name=zone_name,
             settle_delay=settle_delay)
