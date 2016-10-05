@@ -1,15 +1,45 @@
 import hashlib
 import time
+from threading import Thread
 
 import attr
 from acme import jose
 from libcloud.dns.providers import get_driver
-from twisted.internet.threads import deferToThreadPool
-from twisted.python.threadpool import ThreadPool
+from twisted._threads import pool
+from twisted.internet.defer import Deferred
+from twisted.python.failure import Failure
 from zope.interface import implementer
 
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
+
+
+def _daemon_thread(*a, **kw):
+    """
+    Create a `threading.Thread`, but always set ``daemon``.
+    """
+    thread = Thread(*a, **kw)
+    thread.daemon = True
+    return thread
+
+
+def _defer_to_worker(deliver, worker, work, *args, **kwargs):
+    """
+    Run a task in a worker, delivering the result as a ``Deferred`` in the
+    reactor thread.
+    """
+    deferred = Deferred()
+
+    def wrapped_work():
+        try:
+            result = work(*args, **kwargs)
+        except:
+            f = Failure()
+            deliver(lambda: deferred.errback(f))
+        else:
+            deliver(lambda: deferred.callback(result))
+    worker.do(wrapped_work)
+    return deferred
 
 
 def _split_zone(server_name, zone_name):
@@ -105,7 +135,7 @@ class LibcloudDNSResponder(object):
         """
         return cls(
             reactor=reactor,
-            thread_pool=ThreadPool(minthreads=1, maxthreads=1),
+            thread_pool=pool(lambda: 1, threadFactory=_daemon_thread),
             driver=get_driver(driver_name)(username, password),
             zone_name=zone_name,
             settle_delay=settle_delay)
@@ -114,22 +144,13 @@ class LibcloudDNSResponder(object):
         """
         Run a function in our private thread pool.
         """
-        return deferToThreadPool(self._reactor, self._thread_pool, f)
-
-    def _ensure_thread_pool_started(self):
-        """
-        Start the thread pool if it isn't already started.
-        """
-        if not self._thread_pool.started:
-            self._thread_pool.start()
-            self._reactor.addSystemEventTrigger(
-                'after', 'shutdown', self._thread_pool.stop)
+        return _defer_to_worker(
+            self._reactor.callFromThread, self.thread_pool, f)
 
     def start_responding(self, server_name, challenge, response):
         """
         Install a TXT challenge response record.
         """
-        self._ensure_thread_pool_started()
         validation = _validation(response)
         full_name = challenge.validation_domain_name(server_name)
         _driver = self._driver

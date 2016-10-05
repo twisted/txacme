@@ -14,17 +14,20 @@ from testtools.matchers import (
     MatchesStructure, Not)
 from testtools.twistedsupport import succeeded
 from treq.testing import StubTreq
-from twisted.internet.defer import execute, maybeDeferred
+from twisted._threads import createMemoryWorker
+from twisted.internet.defer import maybeDeferred
 from twisted.python.url import URL
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import (
     HTTP01Responder, LibcloudDNSResponder, TLSSNI01Responder)
+from txacme.challenges._libcloud import _daemon_thread
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 from txacme.test import strategies as ts
+from txacme.test.doubles import SynchronousReactorThreads
 from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
 
 
@@ -36,6 +39,12 @@ class _CommonResponderTests(object):
     """
     Common properties which every responder implementation should satisfy.
     """
+    def _do_one_thing(self):
+        """
+        Make the underlying fake implementation do one thing (eg.  simulate one
+        network request, one threaded task execution).
+        """
+
     def test_interface(self):
         """
         The `.IResponder` interface is correctly implemented.
@@ -54,13 +63,13 @@ class _CommonResponderTests(object):
         challenge = self._challenge_factory(token=token)
         response = challenge.response(RSA_KEY_512)
         responder = self._responder_factory()
-        self.assertThat(
-            maybeDeferred(
-                responder.stop_responding,
-                u'example.com',
-                challenge,
-                response),
-            succeeded(Always()))
+        d = maybeDeferred(
+            responder.stop_responding,
+            u'example.com',
+            challenge,
+            response)
+        self._do_one_thing()
+        self.assertThat(d, succeeded(Always()))
 
 
 class TLSResponderTests(_CommonResponderTests, TestCase):
@@ -258,7 +267,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
 
     def _responder_factory(self, zone_name=u'example.com'):
         responder = LibcloudDNSResponder.create(
-            reactor=None,
+            reactor=SynchronousReactorThreads(),
             driver_name='dummy',
             username='ignored',
             password='ignored',
@@ -266,9 +275,18 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             settle_delay=0.0)
         if zone_name is not None:
             responder._driver.create_zone(zone_name)
-        responder._ensure_thread_pool_started = lambda: None
-        responder._defer = execute
+        responder.thread_pool, self._perform = createMemoryWorker()
         return responder
+
+    def _do_one_thing(self):
+        return self._perform()
+
+    def test_daemon_threads(self):
+        """
+        ``_daemon_thread`` creates thread objects with ``daemon`` set.
+        """
+        thread = _daemon_thread()
+        self.assertThat(thread, MatchesStructure(daemon=Equals(True)))
 
     @example(token=EXAMPLE_TOKEN,
              subdomain=u'acme-testing',
@@ -288,9 +306,9 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         zone = responder._driver.list_zones()[0]
 
         self.assertThat(zone.list_records(), HasLength(0))
-        self.assertThat(
-            responder.start_responding(server_name, challenge, response),
-            succeeded(Always()))
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
         self.assertThat(
             zone.list_records(),
             MatchesListwise([
@@ -300,14 +318,14 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
                     )]))
 
         # Starting twice before stopping doesn't break things
-        self.assertThat(
-            responder.start_responding(server_name, challenge, response),
-            succeeded(Always()))
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
         self.assertThat(zone.list_records(), HasLength(1))
 
-        self.assertThat(
-            responder.stop_responding(server_name, challenge, response),
-            succeeded(Always()))
+        d = responder.stop_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
         self.assertThat(zone.list_records(), HasLength(0))
 
     @example(token=EXAMPLE_TOKEN,
@@ -325,9 +343,11 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         response = challenge.response(RSA_KEY_512)
         responder = self._responder_factory(zone_name=zone_name)
         server_name = u'{}.{}.junk'.format(subdomain, zone_name)
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
         self.assertThat(
-            maybeDeferred(
-                responder.start_responding, server_name, challenge, response),
+            d,
             failed_with(MatchesAll(
                 IsInstance(NotInZone),
                 MatchesStructure(
@@ -351,9 +371,11 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         server_name = u'{}.{}'.format(subdomain, zone_name)
         for zone in responder._driver.list_zones():
             zone.delete()
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
         self.assertThat(
-            maybeDeferred(
-                responder.start_responding, server_name, challenge, response),
+            d,
             failed_with(MatchesAll(
                 IsInstance(ZoneNotFound),
                 MatchesStructure(
@@ -391,9 +413,9 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         self.assertThat(zone2.list_records(), HasLength(0))
         self.assertThat(zone3.list_records(), HasLength(0))
         self.assertThat(zone4.list_records(), HasLength(0))
-        self.assertThat(
-            responder.start_responding(server_name, challenge, response),
-            succeeded(Always()))
+        d = responder.start_responding(server_name, challenge, response)
+        self._perform()
+        self.assertThat(d, succeeded(Always()))
         self.assertThat(zone1.list_records(), HasLength(0))
         self.assertThat(zone2.list_records(), HasLength(0))
         self.assertThat(
@@ -425,9 +447,11 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         responder = self._responder_factory(zone_name=None)
         zone = responder._driver.create_zone(zone_name2)
         self.assertThat(zone.list_records(), HasLength(0))
+        d = maybeDeferred(
+            responder.start_responding, server_name, challenge, response)
+        self._perform()
         self.assertThat(
-            maybeDeferred(
-                responder.start_responding, server_name, challenge, response),
+            d,
             failed_with(MatchesAll(
                 IsInstance(NotInZone),
                 MatchesStructure(
