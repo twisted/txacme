@@ -60,6 +60,10 @@ class LibcloudDNSResponder(object):
     """
     A ``dns-01`` challenge responder using libcloud.
 
+    ..  warning:: Some libcloud backends are broken with regard to TXT records
+        at the time of writing; the Route 53 backend, for example. This makes
+        them unusable with this responder.
+
     ..  note:: This implementation relies on invoking libcloud in a thread, so
         may not be entirely production quality.
     """
