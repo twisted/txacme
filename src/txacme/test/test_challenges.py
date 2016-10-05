@@ -4,7 +4,7 @@ Tests for `txacme.challenges`.
 from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
-from hypothesis import example, given
+from hypothesis import assume, example, given
 from testtools import TestCase
 from testtools.matchers import (
     Always, Contains, EndsWith, Equals, HasLength, Is, IsInstance, MatchesAll,
@@ -19,6 +19,7 @@ from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 from txacme.test import strategies as ts
 from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
+
 
 # A random example token for the challenge tests that need one
 EXAMPLE_TOKEN = b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU'
@@ -203,7 +204,8 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             password='ignored',
             zone_name=zone_name,
             settle_delay=0.0)
-        responder._driver.create_zone(zone_name)
+        if zone_name is not None:
+            responder._driver.create_zone(zone_name)
         responder._ensure_thread_pool_started = lambda: None
         responder._defer = execute
         return responder
@@ -233,7 +235,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             zone.list_records(),
             MatchesListwise([
                 MatchesStructure(
-                    name=EndsWith(subdomain),
+                    name=EndsWith(u'.' + subdomain),
                     type=Equals('TXT'),
                     )]))
 
@@ -269,7 +271,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             failed_with(MatchesAll(
                 IsInstance(NotInZone),
                 MatchesStructure(
-                    server_name=EndsWith(server_name),
+                    server_name=EndsWith(u'.' + server_name),
                     zone_name=Equals(zone_name)))))
 
     @example(token=EXAMPLE_TOKEN,
@@ -296,6 +298,81 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
                 IsInstance(ZoneNotFound),
                 MatchesStructure(
                     zone_name=Equals(zone_name)))))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             extra=u'extra',
+             zone_name1=u'example.com',
+             zone_name2=u'example.org')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           extra=ts.dns_names(),
+           zone_name1=ts.dns_names(),
+           zone_name2=ts.dns_names())
+    def test_auto_zone(self, token, subdomain, extra, zone_name1, zone_name2):
+        """
+        If the configured zone_name is ``None``, the zone will be guessed by
+        finding the longest zone that is a suffix of the server name.
+        """
+        zone_name3 = extra + u'.' + zone_name1
+        zone_name4 = extra + u'.' + zone_name2
+        server_name = u'{}.{}.{}'.format(subdomain, extra, zone_name1)
+        assume(
+            len({server_name, zone_name1, zone_name2, zone_name3, zone_name4})
+            == 5)
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=None)
+        zone1 = responder._driver.create_zone(zone_name1)
+        zone2 = responder._driver.create_zone(zone_name2)
+        zone3 = responder._driver.create_zone(zone_name3)
+        zone4 = responder._driver.create_zone(zone_name4)
+        self.assertThat(zone1.list_records(), HasLength(0))
+        self.assertThat(zone2.list_records(), HasLength(0))
+        self.assertThat(zone3.list_records(), HasLength(0))
+        self.assertThat(zone4.list_records(), HasLength(0))
+        self.assertThat(
+            responder.start_responding(server_name, challenge, response),
+            succeeded(Always()))
+        self.assertThat(zone1.list_records(), HasLength(0))
+        self.assertThat(zone2.list_records(), HasLength(0))
+        self.assertThat(
+            zone3.list_records(),
+            MatchesListwise([
+                MatchesStructure(
+                    name=EndsWith(u'.' + subdomain),
+                    type=Equals('TXT'),
+                    )]))
+        self.assertThat(zone4.list_records(), HasLength(0))
+
+    @example(token=EXAMPLE_TOKEN,
+             subdomain=u'acme-testing',
+             zone_name1=u'example.com',
+             zone_name2=u'example.org')
+    @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
+           subdomain=ts.dns_names(),
+           zone_name1=ts.dns_names(),
+           zone_name2=ts.dns_names())
+    def test_auto_zone_missing(self, token, subdomain, zone_name1, zone_name2):
+        """
+        If the configured zone_name is ``None``, and no matching zone is found,
+        ``NotInZone`` is raised.
+        """
+        server_name = u'{}.{}'.format(subdomain, zone_name1)
+        assume(not server_name.endswith(zone_name2))
+        challenge = self._challenge_factory(token=token)
+        response = challenge.response(RSA_KEY_512)
+        responder = self._responder_factory(zone_name=None)
+        zone = responder._driver.create_zone(zone_name2)
+        self.assertThat(zone.list_records(), HasLength(0))
+        self.assertThat(
+            maybeDeferred(
+                responder.start_responding, server_name, challenge, response),
+            failed_with(MatchesAll(
+                IsInstance(NotInZone),
+                MatchesStructure(
+                    server_name=EndsWith(u'.' + server_name),
+                    zone_name=Is(None)))))
 
 
 __all__ = ['TLSResponderTests', 'MergingProxyTests', 'LibcloudResponderTests']

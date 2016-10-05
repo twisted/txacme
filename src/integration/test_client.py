@@ -217,7 +217,7 @@ class LetsEncryptStagingLibcloudTests(ClientTestsMixin, TestCase):
     PASSWORD = _getenv(u'LIBCLOUD_PASSWORD')
     ZONE = _getenv(u'LIBCLOUD_ZONE')
 
-    if None in (HOST, PROVIDER, USERNAME, PASSWORD, ZONE):
+    if None in (HOST, PROVIDER, USERNAME, PASSWORD):
         skip = 'Must provide $ACME_HOST and $LIBCLOUD_*'
 
     def _create_client(self, key):

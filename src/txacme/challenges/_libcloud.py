@@ -25,25 +25,35 @@ def _split_zone(server_name, zone_name):
     return server_name[:-len(zone_name)].rstrip(u'.')
 
 
-def _get_existing(driver, zone_name, subdomain, validation):
+def _get_existing(driver, zone_name, server_name, validation):
     """
     Get existing validation records.
     """
-    zones = [
-        z for z
-        in driver.list_zones()
-        if z.domain == zone_name]
-    if len(zones) == 0:
-        raise ZoneNotFound(zone_name=zone_name)
+    if zone_name is None:
+        zones = sorted(
+            (z for z
+             in driver.list_zones()
+             if server_name.endswith(u'.' + z.domain)),
+            key=lambda z: len(z.domain),
+            reverse=True)
+        if len(zones) == 0:
+            raise NotInZone(server_name=server_name, zone_name=None)
     else:
-        zone = zones[0]
+        zones = [
+            z for z
+            in driver.list_zones()
+            if z.domain == zone_name]
+        if len(zones) == 0:
+            raise ZoneNotFound(zone_name=zone_name)
+    zone = zones[0]
+    subdomain = _split_zone(server_name, zone.domain)
     existing = [
         record for record
         in zone.list_records()
         if record.name == subdomain and
         record.type == 'TXT' and
         record.data == validation]
-    return zone, existing
+    return zone, existing, subdomain
 
 
 def _validation(response):
@@ -76,7 +86,7 @@ class LibcloudDNSResponder(object):
     settle_delay = attr.ib()
 
     @classmethod
-    def create(cls, reactor, driver_name, username, password, zone_name,
+    def create(cls, reactor, driver_name, username, password, zone_name=None,
                settle_delay=60.0):
         """
         Create a responder.
@@ -87,7 +97,9 @@ class LibcloudDNSResponder(object):
             this is driver-specific).
         :param str password: The username to authenticate with (the meaning of
             this is driver-specific).
-        :param str zone_name: The zone name to respond in.
+        :param str zone_name: The zone name to respond in, or ``None`` to
+            automatically detect zones.  Usually auto-detection should be fine,
+            unless restricting responses to a single specific zone is desired.
         :param float settle_delay: The time, in seconds, to allow for the DNS
             provider to propagate record changes.
         """
@@ -104,14 +116,6 @@ class LibcloudDNSResponder(object):
         """
         return deferToThreadPool(self._reactor, self._thread_pool, f)
 
-    def _subdomain(self, server_name, challenge):
-        """
-        Get the validation domain name for a challenge.
-        """
-        return _split_zone(
-            challenge.validation_domain_name(server_name),
-            self.zone_name)
-
     def _ensure_thread_pool_started(self):
         """
         Start the thread pool if it isn't already started.
@@ -127,12 +131,12 @@ class LibcloudDNSResponder(object):
         """
         self._ensure_thread_pool_started()
         validation = _validation(response)
-        subdomain = self._subdomain(server_name, challenge)
+        full_name = challenge.validation_domain_name(server_name)
         _driver = self._driver
 
         def _go():
-            zone, existing = _get_existing(
-                _driver, self.zone_name, subdomain, validation)
+            zone, existing, subdomain = _get_existing(
+                _driver, self.zone_name, full_name, validation)
             if len(existing) == 0:
                 zone.create_record(name=subdomain, type='TXT', data=validation)
                 time.sleep(self.settle_delay)
@@ -143,12 +147,12 @@ class LibcloudDNSResponder(object):
         Remove a TXT challenge response record.
         """
         validation = _validation(response)
-        subdomain = self._subdomain(server_name, challenge)
+        full_name = challenge.validation_domain_name(server_name)
         _driver = self._driver
 
         def _go():
-            zone, existing = _get_existing(
-                _driver, self.zone_name, subdomain, validation)
+            zone, existing, subdomain = _get_existing(
+                _driver, self.zone_name, full_name, validation)
             for record in existing:
                 record.delete()
         return self._defer(_go)
