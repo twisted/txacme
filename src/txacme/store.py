@@ -1,6 +1,8 @@
 """
 ``txacme.interfaces.ICertificateStore`` implementations.
 """
+from operator import methodcaller
+
 import attr
 from pem import parse
 from twisted.internet.defer import maybeDeferred, succeed
@@ -15,7 +17,7 @@ class DirectoryStore(object):
     """
     A certificate store that keeps certificates in a directory on disk.
     """
-    path = attr.ib()
+    path = attr.ib(convert=methodcaller('asTextMode'))
 
     def _get(self, server_name):
         """
