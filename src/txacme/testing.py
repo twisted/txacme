@@ -11,12 +11,54 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
-from twisted.internet.defer import fail, succeed
+from twisted.internet.defer import Deferred, fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
 from txacme.interfaces import ICertificateStore, IResponder
 from txacme.util import clock_now, generate_private_key
+
+
+@attr.s
+class FakeClientController(object):
+    """
+    Controls issuing for `FakeClient`.
+    """
+    paused = attr.ib(default=False)
+
+    _waiting = attr.ib(default=attr.Factory(list), init=False)
+
+    def issue(self):
+        """
+        Return a deferred that fires when we are ready to issue.
+        """
+        if self.paused:
+            d = Deferred()
+            self._waiting.append(d)
+            return d
+        else:
+            return succeed(None)
+
+    def pause(self):
+        """
+        Temporarily pause issuing.
+        """
+        self.paused = True
+
+    def resume(self):
+        """
+        Resume issuing, allowing any pending issuances to proceed.
+        """
+        _waiting = self._waiting
+        self._waiting = []
+        for d in _waiting:
+            d.callback(None)
+
+    def count(self):
+        """
+        Count pending issuances.
+        """
+        return len(self._waiting)
 
 
 class FakeClient(object):
@@ -26,7 +68,7 @@ class FakeClient(object):
     """
     _challenge_types = [challenges.TLSSNI01]
 
-    def __init__(self, key, clock, ca_key=None):
+    def __init__(self, key, clock, ca_key=None, controller=None):
         self.key = key
         self._clock = clock
         self._registered = False
@@ -35,6 +77,11 @@ class FakeClient(object):
         self._challenges = {}
         self._ca_key = ca_key
         self._generate_ca_cert()
+        self._paused = False
+        self._waiting = []
+        if controller is None:
+            controller = FakeClientController()
+        self._controller = controller
 
     def _now(self):
         """
@@ -154,9 +201,9 @@ class FakeClient(object):
                 private_key=self._ca_key,
                 algorithm=hashes.SHA256(),
                 backend=default_backend()))
-        return succeed(
-            messages.CertificateResource(
-                body=cert.public_bytes(encoding=serialization.Encoding.DER)))
+        cert_res = messages.CertificateResource(
+            body=cert.public_bytes(encoding=serialization.Encoding.DER))
+        return self._controller.issue().addCallback(lambda _: cert_res)
 
     def fetch_chain(self, certr, max_length=10):
         return succeed([
@@ -205,4 +252,5 @@ class MemoryStore(object):
         return succeed(self._store)
 
 
-__all__ = ['FakeClient', 'MemoryStore', 'NullResponder']
+__all__ = [
+    'FakeClient', 'FakeClientController', 'MemoryStore', 'NullResponder']
