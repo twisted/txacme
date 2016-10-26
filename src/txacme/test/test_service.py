@@ -13,21 +13,21 @@ from hypothesis.extra.datetime import datetimes
 from pem import Certificate, RSAPrivateKey
 from testtools import run_test_with, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, AllMatch, Always, Equals, GreaterThan,
+    AfterPreprocessing, AllMatch, Always, Contains, Equals, GreaterThan,
     HasLength, Is, IsInstance, MatchesAny, MatchesDict, MatchesListwise,
     MatchesStructure, Not)
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
     has_no_result, succeeded)
-from twisted.internet.defer import Deferred, fail, succeed
+from twisted.internet.defer import CancelledError, Deferred, fail, succeed
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.test import strategies as ts
 from txacme.test.test_client import (
-    RecordingResponder, RSA_KEY_512, RSA_KEY_512_RAW)
-from txacme.testing import FakeClient, MemoryStore
+    failed_with, RecordingResponder, RSA_KEY_512, RSA_KEY_512_RAW)
+from txacme.testing import FakeClient, FakeClientController, MemoryStore
 
 
 def _generate_cert(server_name, not_valid_before, not_valid_after,
@@ -111,6 +111,7 @@ class AcmeFixture(Fixture):
         self._panic_interval = panic_interval
         self._panic = panic
         self.acme_client = client
+        self.controller = FakeClientController()
 
     def _setUp(self):
         self.cert_store = MemoryStore(self._certs)
@@ -119,7 +120,8 @@ class AcmeFixture(Fixture):
             self.now - datetime(1970, 1, 1)).total_seconds()
         if self.acme_client is None:
             acme_client = FakeClient(
-                RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW)
+                RSA_KEY_512, clock=self.clock, ca_key=RSA_KEY_512_RAW,
+                controller=self.controller)
         else:
             acme_client = self.acme_client
         self.responder = RecordingResponder(set(), u'tls-sni-01')
@@ -364,6 +366,87 @@ class AcmeIssuingServiceTests(TestCase):
                 succeeded(
                     MatchesDict({server_name: Not(Equals([]))})))
             self.assertThat(fixture.responder.challenges, HasLength(0))
+
+    @example(u'example.com')
+    @given(ts.dns_names())
+    def test_issue_one_cert(self, server_name):
+        """
+        ``issue_cert`` will (re)issue a single certificate unconditionally.
+        """
+        with AcmeFixture() as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    Not(Contains(server_name))))
+            self.assertThat(
+                fixture.service.issue_cert(server_name),
+                succeeded(Always()))
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({server_name: Not(Equals([]))})))
+
+    @example(u'example.com')
+    @given(ts.dns_names())
+    def test_issue_concurrently(self, server_name):
+        """
+        Invoking ``issue_cert`` multiple times concurrently for the same name
+        will not start multiple issuing processes, only wait for the first
+        process to complete.
+        """
+        with AcmeFixture() as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    Not(Contains(server_name))))
+
+            fixture.controller.pause()
+            d1 = fixture.service.issue_cert(server_name)
+            self.assertThat(d1, has_no_result())
+            d2 = fixture.service.issue_cert(server_name)
+            self.assertThat(d2, has_no_result())
+            self.assertThat(fixture.controller.count(), Equals(1))
+
+            fixture.controller.resume()
+            self.assertThat(d1, succeeded(Always()))
+            self.assertThat(d2, succeeded(Always()))
+
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    MatchesDict({server_name: Not(Equals([]))})))
+
+    @example(u'example.com')
+    @given(ts.dns_names())
+    def test_cancellation(self, server_name):
+        """
+        Cancelling the deferred returned by ``issue_cert`` cancels the actual
+        issuing process.
+        """
+        with AcmeFixture() as fixture:
+            fixture.service.startService()
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    Not(Contains(server_name))))
+
+            fixture.controller.pause()
+            d1 = fixture.service.issue_cert(server_name)
+            self.assertThat(d1, has_no_result())
+            d2 = fixture.service.issue_cert(server_name)
+            self.assertThat(d2, has_no_result())
+            self.assertThat(fixture.controller.count(), Equals(1))
+            d2.cancel()
+
+            fixture.controller.resume()
+            self.assertThat(d1, failed_with(IsInstance(CancelledError)))
+            self.assertThat(d2, failed_with(IsInstance(CancelledError)))
+            self.assertThat(
+                fixture.cert_store.as_dict(),
+                succeeded(
+                    Not(Contains(server_name))))
 
 
 __all__ = ['AcmeIssuingServiceTests']

@@ -70,7 +70,9 @@ class AcmeIssuingService(Service):
     panic_interval = attr.ib(default=timedelta(days=15))
     _panic = attr.ib(default=_default_panic)
     _generate_key = attr.ib(default=partial(generate_private_key, u'rsa'))
-    _waiting = attr.ib(default=attr.Factory(list))
+
+    _waiting = attr.ib(default=attr.Factory(list), init=False)
+    _issuing = attr.ib(default=attr.Factory(dict), init=False)
     ready = False
 
     def _now(self):
@@ -115,7 +117,7 @@ class AcmeIssuingService(Service):
                     consumeErrors=True)
                 .addCallback(done_panicing))
             d2 = gatherResults(
-                [self._with_client(self._issue_cert, server_name)
+                [self.issue_cert(server_name)
                  .addErrback(
                      lambda f: log.failure(
                          u'Error issuing certificate for: {server_name!r}',
@@ -137,6 +139,39 @@ class AcmeIssuingService(Service):
             .addErrback(
                 lambda f: log.failure(
                     u'Error in scheduled certificate check.', f)))
+
+    def issue_cert(self, server_name):
+        """
+        Issue a new cert for a particular name.
+
+        If an existing cert exists, it will be replaced with the new cert.  If
+        issuing is already in progress for the given name, a second issuing
+        process will *not* be started.
+
+        :param str server_name: The name to issue a cert for.
+
+        :rtype: ``Deferred``
+        :return: A deferred that fires when issuing is complete.
+        """
+        def finish(result):
+            _, waiting = self._issuing.pop(server_name)
+            for d in waiting:
+                d.callback(result)
+
+        # d_issue is assigned below, in the conditional, since we may be
+        # creating it or using the existing one.
+        d = Deferred(lambda _: d_issue.cancel())
+        if server_name in self._issuing:
+            d_issue, waiting = self._issuing[server_name]
+            waiting.append(d)
+        else:
+            d_issue = self._with_client(self._issue_cert, server_name)
+            waiting = [d]
+            self._issuing[server_name] = (d_issue, waiting)
+            # Add the callback afterwards in case we're using a client
+            # implementation that isn't actually async
+            d_issue.addBoth(finish)
+        return d
 
     def _with_client(self, f, *a, **kw):
         """
@@ -196,7 +231,7 @@ class AcmeIssuingService(Service):
 
     def _ensure_registered(self):
         """
-        Register if needed."
+        Register if needed.
         """
         if self._registered:
             return succeed(None)
