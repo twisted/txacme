@@ -1,1 +1,1 @@
-INCOMPATIBLE CHANGE: The *_DIRECTORY constants are now in txacme.directory.
+INCOMPATIBLE CHANGE: The *_DIRECTORY constants are now in txacme.urls.
