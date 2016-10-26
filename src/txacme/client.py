@@ -106,7 +106,7 @@ class Client(object):
         Construct a client from an ACME directory at a given URL.
 
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
-            See `txacme.directory` for constants for various well-known public
+            See `txacme.urls` for constants for various well-known public
             directories.
         :param reactor: The Twisted reactor to use.
         :param ~acme.jose.jwk.JWK key: The client key to use.
