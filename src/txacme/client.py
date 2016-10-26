@@ -11,7 +11,6 @@ from treq import json_content
 from treq.client import HTTPClient
 from twisted.internet.defer import maybeDeferred, succeed
 from twisted.internet.task import deferLater
-from twisted.python.url import URL
 from twisted.web import http
 from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.http_headers import Headers
@@ -26,14 +25,6 @@ from txacme.logging import (
     LOG_JWS_GET, LOG_JWS_GET_NONCE, LOG_JWS_HEAD, LOG_JWS_POST,
     LOG_JWS_REQUEST, LOG_JWS_SIGN)
 from txacme.util import check_directory_url_type, tap
-
-
-LETSENCRYPT_DIRECTORY = URL.fromText(
-    u'https://acme-v01.api.letsencrypt.org/directory')
-
-
-LETSENCRYPT_STAGING_DIRECTORY = URL.fromText(
-    u'https://acme-staging.api.letsencrypt.org/directory')
 
 
 # Borrowed from requests, with modifications.
@@ -115,6 +106,8 @@ class Client(object):
         Construct a client from an ACME directory at a given URL.
 
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
+            See `txacme.directory` for constants for various well-known public
+            directories.
         :param reactor: The Twisted reactor to use.
         :param ~acme.jose.jwk.JWK key: The client key to use.
         :param alg: The signing algorithm to use.  Needs to be compatible with
@@ -879,5 +872,4 @@ __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
     'answer_challenge', 'poll_until_valid', 'NoSupportedChallenges',
-    'AuthorizationFailed', 'DER_CONTENT_TYPE', 'LETSENCRYPT_DIRECTORY',
-    'LETSENCRYPT_STAGING_DIRECTORY']
+    'AuthorizationFailed', 'DER_CONTENT_TYPE']
