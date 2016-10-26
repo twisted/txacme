@@ -22,7 +22,8 @@ from txsni.snimap import HostDirectoryMap
 from zope.interface import implementer
 from zope.interface.verify import verifyObject
 
-from txacme.endpoint import _AcmeParser, AutoTLSEndpoint
+from txacme._endpoint_parser import _AcmeParser
+from txacme.endpoint import AutoTLSEndpoint
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
 from txacme.testing import FakeClient, MemoryStore
