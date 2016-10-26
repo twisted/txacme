@@ -22,11 +22,11 @@ from txsni.snimap import HostDirectoryMap
 from zope.interface import implementer
 from zope.interface.verify import verifyObject
 
-from txacme.client import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 from txacme.endpoint import _AcmeParser, AutoTLSEndpoint
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
 from txacme.testing import FakeClient, MemoryStore
+from txacme.urls import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 
 
 @implementer(IListeningPort)

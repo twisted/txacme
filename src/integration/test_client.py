@@ -24,10 +24,10 @@ from txsni.tlsendpoint import TLSEndpoint
 
 from txacme.challenges import LibcloudDNSResponder, TLSSNI01Responder
 from txacme.client import (
-    answer_challenge, Client, fqdn_identifier, LETSENCRYPT_STAGING_DIRECTORY,
-    poll_until_valid)
+    answer_challenge, Client, fqdn_identifier, poll_until_valid)
 from txacme.messages import CertificateRequest
 from txacme.testing import FakeClient, NullResponder
+from txacme.urls import LETSENCRYPT_STAGING_DIRECTORY
 from txacme.util import csr_for_names, generate_private_key, tap
 
 
