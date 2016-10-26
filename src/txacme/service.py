@@ -158,6 +158,8 @@ class AcmeIssuingService(Service):
             for d in waiting:
                 d.callback(result)
 
+        # d_issue is assigned below, in the conditional, since we may be
+        # creating it or using the existing one.
         d = Deferred(lambda _: d_issue.cancel())
         if server_name in self._issuing:
             d_issue, waiting = self._issuing[server_name]
