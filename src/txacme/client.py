@@ -545,13 +545,13 @@ def answer_challenge(authzr, client, responders):
         return maybeDeferred(
             responder.stop_responding,
             authzr.body.identifier.value,
-            challb,
+            challb.chall,
             response)
     return (
         maybeDeferred(
             responder.start_responding,
             authzr.body.identifier.value,
-            challb,
+            challb.chall,
             response)
         .addCallback(lambda _: client.answer_challenge(challb, response))
         .addCallback(lambda _: _stop_responding)

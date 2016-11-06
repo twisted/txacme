@@ -12,9 +12,9 @@ from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
-    AfterPreprocessing, Always, ContainsDict, Equals, HasLength, Is,
-    IsInstance, MatchesAll, MatchesListwise, MatchesPredicate,
-    MatchesStructure, Mismatch, Never, Not, StartsWith)
+    AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
+    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure, Mismatch,
+    Never, Not, StartsWith)
 from testtools.twistedsupport import failed, succeeded
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
@@ -959,8 +959,8 @@ class ClientTests(TestCase):
         The challenge is found in the responder after invoking
         `~txacme.client.answer_challenge`.
         """
-        challenges = set()
-        responder = RecordingResponder(challenges, u'tls-sni-01')
+        recorded_challenges = set()
+        responder = RecordingResponder(recorded_challenges, u'tls-sni-01')
         uri = u'https://example.org/acme/authz/1/1'
         key_authorization = (
             u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
@@ -1011,12 +1011,14 @@ class ClientTests(TestCase):
             self.assertThat(d, succeeded(Always()))
             stop_responding = d.result
             self.assertThat(
-                list(challenges),
-                HasLength(1))
+                recorded_challenges,
+                MatchesListwise([
+                    IsInstance(challenges.TLSSNI01)
+                ]))
             self.assertThat(
                 stop_responding(),
                 succeeded(Always()))
-            self.assertThat(challenges, Equals(set()))
+            self.assertThat(recorded_challenges, Equals(set()))
 
     def _make_poll_response(self, uri, identifier_json):
         """
