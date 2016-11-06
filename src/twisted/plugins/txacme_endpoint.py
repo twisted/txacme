@@ -1,5 +1,5 @@
-from txacme.client import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
-from txacme.endpoint import _AcmeParser
+from txacme._endpoint_parser import _AcmeParser
+from txacme.urls import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 
 
 le_parser = _AcmeParser('le', LETSENCRYPT_DIRECTORY)
