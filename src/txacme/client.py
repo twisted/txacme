@@ -710,12 +710,8 @@ class JWSClient(object):
         def _got_json(jobj):
             if 400 <= response.code < 600:
                 if response_ct == JSON_ERROR_CONTENT_TYPE and jobj is not None:
-                    try:
-                        raise ServerError(
-                            messages.Error.from_json(jobj), response)
-                    except jose.DeserializationError as error:
-                        # Couldn't deserialize JSON object
-                        raise errors.ClientError((response, error))
+                    raise ServerError(
+                        messages.Error.from_json(jobj), response)
                 else:
                     # response is not JSON object
                     raise errors.ClientError(response)
