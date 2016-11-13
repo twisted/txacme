@@ -131,7 +131,8 @@ def load_or_create_client_key(pem_path):
 
     .. note:: The client key that will be created will be a 2048-bit RSA key.
 
-    :param twisted.python.filepath.FilePath pem_path: The certificate directory
+    :type pem_path: ``twisted.python.filepath.FilePath``
+    :param pem_path: The certificate directory
         to use, as with the endpoint.
     """
     acme_key_file = pem_path.asTextMode().child(u'client.key')
