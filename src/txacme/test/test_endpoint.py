@@ -3,6 +3,9 @@ Tests for `txacme.endpoint`.
 """
 from datetime import datetime
 
+from acme.jose import JWKRSA
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fixtures import TempDir
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
@@ -23,7 +26,7 @@ from zope.interface import implementer
 from zope.interface.verify import verifyObject
 
 from txacme._endpoint_parser import _AcmeParser
-from txacme.endpoint import AutoTLSEndpoint
+from txacme.endpoint import AutoTLSEndpoint, load_or_create_client_key
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
 from txacme.testing import FakeClient, MemoryStore
@@ -170,6 +173,39 @@ class PluginTests(TestCase):
         key_data = key_path.getContent()
         parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
         self.assertThat(key_path.getContent(), Equals(key_data))
+
+
+class LoadClientKeyTests(TestCase):
+    """
+    Tests for `~txacme.endpoint.load_or_create_client_key`.
+    """
+    def test_create_key(self):
+        """
+        `~txacme.endpoint.load_or_create_client_key` creates a new key if one
+        does not exist.
+        """
+        tempdir = self.useFixture(TempDir()).path
+        temp_path = FilePath(tempdir)
+        key_path = temp_path.child('client.key')
+        self.assertThat(key_path.isfile(), Equals(False))
+        self.assertThat(
+            load_or_create_client_key(temp_path),
+            Equals(JWKRSA(key=load_pem_private_key(
+                    key_path.getContent(),
+                    password=None,
+                    backend=default_backend()))))
+
+    def test_idempotent(self):
+        """
+        Loading the key twice loads the same key the second time as was created
+        the first time.
+        """
+        tempdir = self.useFixture(TempDir()).path
+        temp_path = FilePath(tempdir)
+        key_path = temp_path.child('client.key')
+        self.assertThat(key_path.isfile(), Equals(False))
+        key = load_or_create_client_key(temp_path)
+        self.assertThat(load_or_create_client_key(temp_path), Equals(key))
 
 
 __all__ = ['EndpointTests', 'PluginTests']
