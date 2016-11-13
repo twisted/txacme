@@ -1327,8 +1327,8 @@ class JWSClientTests(TestCase):
 
     def test_check_invalid_error(self):
         """
-        If an error response is received but cannot be parse,
-        :exc:`~acme.errors.ClientError` is raised.
+        If an error response is received but cannot be parsed,
+        :exc:`~acme.errors.ServerError` is raised.
         """
         self.assertThat(
             JWSClient._check_response(
@@ -1339,7 +1339,7 @@ class JWSClientTests(TestCase):
 
     def test_check_valid_error(self):
         """
-        If an error response is received but cannot be parse,
+        If an error response is received but cannot be parsed,
         :exc:`~acme.errors.ClientError` is raised.
         """
         self.assertThat(
@@ -1357,12 +1357,24 @@ class JWSClientTests(TestCase):
 
     def test_check_expected_bad_json(self):
         """
-        If a JSON response was expected, but could not be parse,
+        If a JSON response was expected, but could not be parsed,
         :exc:`~acme.errors.ClientError` is raised.
         """
         self.assertThat(
             JWSClient._check_response(
                 TestResponse(json=lambda: fail(ValueError()))),
+            failed_with(IsInstance(errors.ClientError)))
+
+    def test_check_expected_wrong_json(self):
+        """
+        If a JSON response was expected, but has incorrect data,
+        :exc:`~acme.errors.ClientError` is raised.
+        """
+        self.assertThat(
+            JWSClient._check_response(
+                TestResponse(json=lambda: succeed({
+                    u'not': u'actually',
+                    u'a valid': u'error message'}))),
             failed_with(IsInstance(errors.ClientError)))
 
     def test_missing_nonce(self):
