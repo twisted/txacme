@@ -391,13 +391,18 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
              subdomain=u'acme-testing',
              extra=u'extra',
              zone_name1=u'example.com',
-             zone_name2=u'example.org')
+             suffix1=u'.',
+             zone_name2=u'example.org',
+             suffix2=u'')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode),
            subdomain=ts.dns_names(),
            extra=ts.dns_names(),
            zone_name1=ts.dns_names(),
-           zone_name2=ts.dns_names())
-    def test_auto_zone(self, token, subdomain, extra, zone_name1, zone_name2):
+           suffix1=s.sampled_from([u'', u'.']),
+           zone_name2=ts.dns_names(),
+           suffix2=s.sampled_from([u'', u'.']))
+    def test_auto_zone(self, token, subdomain, extra, zone_name1, suffix1,
+                       zone_name2, suffix2):
         """
         If the configured zone_name is ``None``, the zone will be guessed by
         finding the longest zone that is a suffix of the server name.
@@ -411,10 +416,10 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
         challenge = self._challenge_factory(token=token)
         response = challenge.response(RSA_KEY_512)
         responder = self._responder_factory(zone_name=None)
-        zone1 = responder._driver.create_zone(zone_name1)
-        zone2 = responder._driver.create_zone(zone_name2)
-        zone3 = responder._driver.create_zone(zone_name3)
-        zone4 = responder._driver.create_zone(zone_name4)
+        zone1 = responder._driver.create_zone(zone_name1 + suffix1)
+        zone2 = responder._driver.create_zone(zone_name2 + suffix2)
+        zone3 = responder._driver.create_zone(zone_name3 + suffix1)
+        zone4 = responder._driver.create_zone(zone_name4 + suffix2)
         self.assertThat(zone1.list_records(), HasLength(0))
         self.assertThat(zone2.list_records(), HasLength(0))
         self.assertThat(zone3.list_records(), HasLength(0))
@@ -428,7 +433,9 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             zone3.list_records(),
             MatchesListwise([
                 MatchesStructure(
-                    name=EndsWith(u'.' + subdomain),
+                    name=AfterPreprocessing(
+                        methodcaller('rstrip', u'.'),
+                        EndsWith(u'.' + subdomain)),
                     type=Equals('TXT'),
                     )]))
         self.assertThat(zone4.list_records(), HasLength(0))
