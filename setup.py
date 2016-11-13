@@ -56,7 +56,6 @@ setup(
             'apache-libcloud',
         ],
         'test': [
-            'apache-libcloud',
             'fixtures>=1.4.0',
             'hypothesis>=3.1.0,<4.0.0',
             'testrepository>=0.0.20',
