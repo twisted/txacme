@@ -7,7 +7,7 @@ from acme import challenges
 from acme.jose import b64encode
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
-from testtools import TestCase
+from testtools import skipIf, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, Contains, EndsWith, Equals, HasLength,
     Is, IsInstance, MatchesAll, MatchesListwise, MatchesPredicate,
@@ -20,15 +20,20 @@ from twisted.python.url import URL
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import (
-    HTTP01Responder, LibcloudDNSResponder, TLSSNI01Responder)
-from txacme.challenges._libcloud import _daemon_thread
+from txacme.challenges import HTTP01Responder, TLSSNI01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 from txacme.test import strategies as ts
 from txacme.test.doubles import SynchronousReactorThreads
 from txacme.test.test_client import failed_with, RSA_KEY_512, RSA_KEY_512_RAW
+
+
+try:
+    from txacme.challenges import LibcloudDNSResponder
+    from txacme.challenges._libcloud import _daemon_thread
+except ImportError:
+    LibcloudDNSResponder = None
 
 
 # A random example token for the challenge tests that need one
@@ -257,6 +262,7 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
                         succeeded(MatchesStructure(code=Equals(404))))
 
 
+@skipIf(LibcloudDNSResponder is None, 'libcloud not available')
 class LibcloudResponderTests(_CommonResponderTests, TestCase):
     """
     `.LibcloudDNSResponder` implements a responder for dns-01 challenges using
