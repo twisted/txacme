@@ -11,9 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from twisted.internet.defer import maybeDeferred
 from twisted.internet.endpoints import serverFromString
-from twisted.internet.interfaces import (
-    IListeningPort, IStreamServerEndpoint, IStreamServerEndpointStringParser)
-from twisted.plugin import IPlugin
+from twisted.internet.interfaces import IListeningPort, IStreamServerEndpoint
 from twisted.protocols.tls import TLSMemoryBIOFactory
 from twisted.python.filepath import FilePath
 from txsni.snimap import HostDirectoryMap, SNIMap
@@ -163,23 +161,4 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
         sub_endpoint=serverFromString(reactor, sub))
 
 
-@implementer(IPlugin, IStreamServerEndpointStringParser)
-@attr.s
-class _AcmeParser(object):
-    """
-    txacme endpoint parser.
-
-    Connects an `AutoTLSEndpoint` to the an ACME certificate authority and a
-    directory certificate store.
-    """
-    prefix = attr.ib()
-    directory = attr.ib()
-
-    def parseStreamServer(self, reactor, *args, **kwargs):  # noqa
-        """
-        .. seealso:: `_parse`
-        """
-        return _parse(reactor, self.directory, *args, **kwargs)
-
-
-__all__ = ['AutoTLSEndpoint', '_AcmeParser']
+__all__ = ['AutoTLSEndpoint']
