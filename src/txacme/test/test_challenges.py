@@ -281,7 +281,7 @@ class LibcloudResponderTests(_CommonResponderTests, TestCase):
             settle_delay=0.0)
         if zone_name is not None:
             responder._driver.create_zone(zone_name)
-        responder.thread_pool, self._perform = createMemoryWorker()
+        responder._thread_pool, self._perform = createMemoryWorker()
         return responder
 
     def _do_one_thing(self):

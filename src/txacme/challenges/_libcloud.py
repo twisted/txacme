@@ -149,7 +149,7 @@ class LibcloudDNSResponder(object):
         Run a function in our private thread pool.
         """
         return _defer_to_worker(
-            self._reactor.callFromThread, self.thread_pool, f)
+            self._reactor.callFromThread, self._thread_pool, f)
 
     def start_responding(self, server_name, challenge, response):
         """

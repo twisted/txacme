@@ -643,6 +643,9 @@ class AuthorizationFailed(Exception):
             '{0.authzr.body.identifier!r} '
             '{0.errors!r}>)'.format(self))
 
+    def __str__(self):
+        return repr(self)
+
 
 class NoSupportedChallenges(Exception):
     """
