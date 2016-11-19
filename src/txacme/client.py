@@ -840,7 +840,7 @@ class JWSClient(object):
                         lambda nonce: action.add_success_fields(nonce=nonce)))
                     .addActionFinish())
 
-    def post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
+    def _post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
         """
         POST an object and check the response.
 
@@ -866,6 +866,31 @@ class JWSClient(object):
                 .addCallback(self._add_nonce)
                 .addCallback(self._check_response, content_type=content_type)
                 .addActionFinish())
+
+    def post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
+        """
+        POST an object and check the response. Retry once if a badNonce error
+        is received.
+
+        :param str url: The URL to request.
+        :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
+            payload of the request.
+        :param bytes content_type: The expected content type of the response.
+            By default, JSON.
+
+        :raises txacme.client.ServerError: If server response body carries HTTP
+            Problem (draft-ietf-appsawg-http-problem-00).
+        :raises acme.errors.ClientError: In case of other protocol errors.
+        """
+        def retry_bad_nonce(f):
+            f.trap(ServerError)
+            if f.value.message.typ.split(':')[-1] == 'badNonce':
+                return self._post(
+                    url, obj, content_type=JSON_CONTENT_TYPE, **kwargs)
+            return f
+        return (
+            self._post(url, obj, content_type=JSON_CONTENT_TYPE, **kwargs)
+            .addErrback(retry_bad_nonce))
 
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
