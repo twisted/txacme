@@ -39,4 +39,5 @@ class ValidForName(object):
             return Mismatch(
                 '{!r} is not valid for {!r}'.format(value, self.name))
 
+
 __all__ = ['ValidForName']
