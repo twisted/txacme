@@ -840,7 +840,7 @@ class JWSClient(object):
                         lambda nonce: action.add_success_fields(nonce=nonce)))
                     .addActionFinish())
 
-    def _post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
+    def _post(self, url, obj, content_type, **kwargs):
         """
         POST an object and check the response.
 
@@ -848,7 +848,6 @@ class JWSClient(object):
         :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
             payload of the request.
         :param bytes content_type: The expected content type of the response.
-            By default, JSON.
 
         :raises txacme.client.ServerError: If server response body carries HTTP
             Problem (draft-ietf-appsawg-http-problem-00).
@@ -885,11 +884,10 @@ class JWSClient(object):
         def retry_bad_nonce(f):
             f.trap(ServerError)
             if f.value.message.typ.split(':')[-1] == 'badNonce':
-                return self._post(
-                    url, obj, content_type=JSON_CONTENT_TYPE, **kwargs)
+                return self._post(url, obj, content_type, **kwargs)
             return f
         return (
-            self._post(url, obj, content_type=JSON_CONTENT_TYPE, **kwargs)
+            self._post(url, obj, content_type, **kwargs)
             .addErrback(retry_bad_nonce))
 
 __all__ = [
