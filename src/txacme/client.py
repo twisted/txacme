@@ -883,6 +883,10 @@ class JWSClient(object):
         """
         def retry_bad_nonce(f):
             f.trap(ServerError)
+            # The current RFC draft defines the namespace as
+            # urn:ietf:params:acme:error:<code>, but earlier drafts (and some
+            # current implementations) use urn:acme:error:<code> instead. We
+            # don't really care about the namespace here, just the error code.
             if f.value.message.typ.split(':')[-1] == 'badNonce':
                 return self._post(url, obj, content_type, **kwargs)
             return f
