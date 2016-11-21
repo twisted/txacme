@@ -528,7 +528,7 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'new-reg',
                      u'contact': [u'mailto:example@example.com'],
-                 }), nonce='Nonce2')]),
+                 }), nonce=b'Nonce2')]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
                 b'replay-nonce': jose.b64encode(b'Nonce3'),
@@ -550,7 +550,8 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         # Stash a few nonces so that we have some to clear on the retry.
-        client._client._nonces.update(['OldNonce1', 'OldNonce2', 'OldNonce3'])
+        client._client._nonces.update(
+            [b'OldNonce1', b'OldNonce2', b'OldNonce3', b'OldNonce4'])
         reg = messages.NewRegistration.from_data(email=u'example@example.com')
         with sequence.consume(self.fail):
             d = client.register(reg)
@@ -564,7 +565,7 @@ class ClientTests(TestCase):
                         u'https://example.org/acme/new-authz'),
                     terms_of_service=Equals(u'https://example.org/acme/terms'),
                 )))
-        self.assertThat(client._client._nonces, Equals(set(['Nonce3'])))
+        self.assertThat(client._client._nonces, Equals(set([b'Nonce3'])))
 
     def test_register_bad_nonce_twice(self):
         """
