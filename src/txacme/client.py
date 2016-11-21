@@ -888,6 +888,10 @@ class JWSClient(object):
             # current implementations) use urn:acme:error:<code> instead. We
             # don't really care about the namespace here, just the error code.
             if f.value.message.typ.split(':')[-1] == 'badNonce':
+                # If one nonce is bad, others likely are too. Let's clear them
+                # and re-add the one we just got.
+                self._nonces.clear()
+                self._add_nonce(f.value.response)
                 return self._post(url, obj, content_type, **kwargs)
             return f
         return (
