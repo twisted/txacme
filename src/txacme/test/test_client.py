@@ -197,7 +197,13 @@ def on_json(matcher):
     return AfterPreprocessing(_loads, matcher)
 
 
-def on_jws(matcher):
+def on_jws(matcher, nonce=None):
+    nonce_matcher = Always()
+    if nonce is not None:
+        def extract_nonce(j):
+            protected = json.loads(j.signatures[0].protected)
+            return jose.b64.b64decode(protected[u'nonce'])
+        nonce_matcher = AfterPreprocessing(extract_nonce, Equals(nonce))
     return on_json(
         AfterPreprocessing(
             jws.JWS.from_json,
@@ -206,7 +212,8 @@ def on_jws(matcher):
                     methodcaller('verify'), '%r does not verify'),
                 AfterPreprocessing(
                     attrgetter('payload'),
-                    on_json(matcher)))))
+                    on_json(matcher)),
+                nonce_matcher)))
 
 
 @attr.s
@@ -488,6 +495,133 @@ class ClientTests(TestCase):
                         message=MatchesStructure(
                             typ=Equals(u'urn:acme:error:rateLimited'),
                             detail=Equals(u'The request exceeds a rate limit'),
+                            )))))
+
+    def test_register_bad_nonce_once(self):
+        """
+        If a badNonce error is received, we clear all old nonces and retry the
+        request once.
+        """
+        sequence = RequestSequence(
+            [(MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com']}))]),
+              (http.SERVICE_UNAVAILABLE,
+               {b'content-type': JSON_ERROR_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                },
+               _json_dumps(
+                   {u'status': http.SERVICE_UNAVAILABLE,
+                    u'type': u'urn:acme:error:badNonce',
+                    u'detail': u'The client sent a bad nonce'}
+               ))),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com'],
+                 }), nonce=b'Nonce2')]),
+              (http.CREATED,
+               {b'content-type': JSON_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'location': b'https://example.org/acme/reg/1',
+                b'link': b','.join([
+                    b'<https://example.org/acme/new-authz>;rel="next"',
+                    b'<https://example.org/acme/recover-reg>;rel="recover"',
+                    b'<https://example.org/acme/terms>;rel="terms-of-service"',
+                ])},
+               _json_dumps({
+                   u'key': {
+                       u'n': u'rlQR-WPFDjJn-vz3Y4HIseX3t0H9sqVEvPSL1gexDJkZDK6'
+                             u'4AR3CLPg9kh2lXsMr0FysPuAspeHb75OVKFC1JQ',
+                       u'e': u'AQAB',
+                       u'kty': u'RSA'},
+                   u'contact': [u'mailto:example@example.com'],
+               })))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        # Stash a few nonces so that we have some to clear on the retry.
+        client._client._nonces.update(
+            [b'OldNonce1', b'OldNonce2', b'OldNonce3', b'OldNonce4'])
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        with sequence.consume(self.fail):
+            d = client.register(reg)
+            self.assertThat(
+                d, succeeded(MatchesStructure(
+                    body=MatchesStructure(
+                        key=Equals(RSA_KEY_512.public_key()),
+                        contact=Equals(reg.contact)),
+                    uri=Equals(u'https://example.org/acme/reg/1'),
+                    new_authzr_uri=Equals(
+                        u'https://example.org/acme/new-authz'),
+                    terms_of_service=Equals(u'https://example.org/acme/terms'),
+                )))
+        self.assertThat(client._client._nonces, Equals(set([b'Nonce3'])))
+
+    def test_register_bad_nonce_twice(self):
+        """
+        If a badNonce error is received on a retry, fail the request.
+        """
+        sequence = RequestSequence(
+            [_nonce_response(
+                u'https://example.org/acme/new-reg',
+                b'Nonce'),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com']}))]),
+              (http.SERVICE_UNAVAILABLE,
+               {b'content-type': JSON_ERROR_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                },
+               _json_dumps(
+                   {u'status': http.SERVICE_UNAVAILABLE,
+                    u'type': u'urn:acme:error:badNonce',
+                    u'detail': u'The client sent a bad nonce'}
+               ))),
+             (MatchesListwise([
+                 Equals(b'POST'),
+                 Equals(u'https://example.org/acme/new-reg'),
+                 Equals({}),
+                 Always(),
+                 on_jws(Equals({
+                     u'resource': u'new-reg',
+                     u'contact': [u'mailto:example@example.com']}))]),
+              (http.SERVICE_UNAVAILABLE,
+               {b'content-type': JSON_ERROR_CONTENT_TYPE,
+                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                },
+               _json_dumps(
+                   {u'status': http.SERVICE_UNAVAILABLE,
+                    u'type': u'urn:acme:error:badNonce',
+                    u'detail': u'The client sent a bad nonce'}
+               )))],
+            self.expectThat)
+        client = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512)).client
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        with sequence.consume(self.fail):
+            d = client.register(reg)
+            self.assertThat(
+                d, failed_with(MatchesAll(
+                    IsInstance(ServerError),
+                    MatchesStructure(
+                        message=MatchesStructure(
+                            typ=Equals(u'urn:acme:error:badNonce'),
+                            detail=Equals(u'The client sent a bad nonce'),
                             )))))
 
     def test_agree_to_tos(self):
