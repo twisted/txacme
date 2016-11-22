@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 from operator import methodcaller
 
+from acme import messages
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -104,12 +105,13 @@ class AcmeFixture(Fixture):
     A fixture for setting up an `~txacme.service.AcmeIssuingService`.
     """
     def __init__(self, now=datetime(2000, 1, 1, 0, 0, 0), certs=None,
-                 panic_interval=None, panic=None, client=None):
+                 panic_interval=None, panic=None, client=None, email=None):
         super(AcmeFixture, self).__init__()
         self.now = now
         self._certs = certs
         self._panic_interval = panic_interval
         self._panic = panic
+        self._email = email
         self.acme_client = client
         self.controller = FakeClientController()
 
@@ -130,6 +132,7 @@ class AcmeFixture(Fixture):
             client_creator=lambda: succeed(acme_client),
             clock=self.clock,
             responders=[self.responder],
+            email=self._email,
             panic_interval=self._panic_interval,
             panic=self._panic,
             generate_key=lambda: RSA_KEY_512_RAW)
@@ -447,6 +450,27 @@ class AcmeIssuingServiceTests(TestCase):
                 fixture.cert_store.as_dict(),
                 succeeded(
                     Not(Contains(server_name))))
+
+    def test_registration_email(self):
+        """
+        If we give our service an email address, that address will be used as a
+        registration contact.
+        """
+        # First the case with no email given.
+        with AcmeFixture() as fixture:
+            fixture.service.startService()
+            self.assertThat(fixture.service._regr, MatchesStructure(
+                body=MatchesStructure(
+                    key=Is(None),
+                    contact=Equals(()))))
+
+        # Next, we give an email.
+        with AcmeFixture(email=u'example@example.com') as fixture:
+            fixture.service.startService()
+            self.assertThat(fixture.service._regr, MatchesStructure(
+                body=MatchesStructure(
+                    key=Is(None),
+                    contact=Equals((u'mailto:example@example.com',)))))
 
 
 __all__ = ['AcmeIssuingServiceTests']
