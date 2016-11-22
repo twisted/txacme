@@ -150,7 +150,7 @@ class Client(object):
                 DeferredContext(
                     self.update_registration(
                         new_reg, uri=self.directory[new_reg]))
-                .addErrback(self._maybe_registered)
+                .addErrback(self._maybe_registered, new_reg)
                 .addCallback(
                     tap(lambda r: action.add_success_fields(registration=r)))
                 .addActionFinish())
@@ -165,16 +165,17 @@ class Client(object):
             return location.decode('ascii')
         return uri
 
-    def _maybe_registered(self, failure):
+    def _maybe_registered(self, failure, new_reg):
         """
         If the registration already exists, we should just load it.
         """
         failure.trap(ServerError)
         response = failure.value.response
         if response.code == http.CONFLICT:
+            reg = new_reg.update(
+                resource=messages.UpdateRegistration.resource_type)
             uri = self._maybe_location(response)
-            return self.update_registration(
-                messages.UpdateRegistration(), uri=uri)
+            return self.update_registration(reg, uri=uri)
         return failure
 
     def agree_to_tos(self, regr):
