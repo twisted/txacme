@@ -3,9 +3,9 @@ Certificates directory
 
 The certificates directory used by ``DirectoryStore`` (and thus the ``le:`` and
 ``lets:`` endpoints) is coordinated with `txsni`_ to allow sharing a
-certificates directory with other applications. Any future changes to the
-contents of this directory will be coordinated between txsni and txacme to
-preserve compatibility.
+certificates directory with other applications. The txsni and txacme
+maintainers have committed to coordination of any future changes to the
+contents of this directory to ensure continued compatibility.
 
 .. _txsni: https://github.com/glyph/txsni
 
