@@ -130,11 +130,15 @@ class ClientTestsMixin(object):
             .addCallback(partial(setattr, self, 'client'))
             .addCallback(lambda _: self._test_register())
             .addCallback(tap(
+                lambda reg1: self.assertEqual(reg1.body.contact, ())))
+            .addCallback(tap(
                 lambda reg1:
                 self._test_register(
                     NewRegistration.from_data(email=u'example@example.com'))
-                .addCallback(
-                    lambda reg2: self.assertEqual(reg1.uri, reg2.uri))))
+                .addCallback(tap(
+                    lambda reg2: self.assertEqual(reg1.uri, reg2.uri)))
+                .addCallback(lambda reg2: self.assertEqual(
+                    reg2.body.contact, (u'mailto:example@example.com',)))))
             .addCallback(self._test_agree_to_tos)
             .addCallback(
                 lambda _: self._test_request_challenges(self.HOST))
