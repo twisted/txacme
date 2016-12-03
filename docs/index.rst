@@ -12,6 +12,7 @@ Contents
    :maxdepth: 2
 
    using
+   certs-dir
    api-stability
    changelog
    API documentation </api/modules>

@@ -49,9 +49,10 @@ generated.
 
 Certificates (and chain certificates and keys) in PEM format will be stored in
 the certificate directory using filenames based on the servername that the
-client sends by SNI, e.g. ``some.domain.name.pem``. If there is no existing
-certificate available for a domain, an empty file should be created to have one
-issued on startup; the behaviour is as if the certificate had expired.
+client sends by SNI, e.g. ``some.domain.name.pem``. The contents of the
+directory are documented in more detail :doc:`here <certs-dir>`. If there is no
+existing certificate available for a domain, an empty file should be created to
+have one issued on startup; the behaviour is as if the certificate had expired.
 Importantly, clients that do not perform SNI will not be able to connect to the
 endpoint.
 
