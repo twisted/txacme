@@ -1,6 +1,7 @@
 from datetime import timedelta
 from functools import partial
 
+from acme import messages
 import attr
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -44,6 +45,7 @@ class AcmeIssuingService(Service):
     :param responders: Challenge responders.  Usually only one responder is
         needed; if more than one responder for the same type is provided, only
         the first will be used.
+    :param str email: An (optional) email address to use during registration.
     :param ~datetime.timedelta check_interval: How often to check for expiring
         certificates.
     :param ~datetime.timedelta reissue_interval: If a certificate is expiring
@@ -65,6 +67,7 @@ class AcmeIssuingService(Service):
     _client_creator = attr.ib()
     _clock = attr.ib()
     _responders = attr.ib()
+    _email = attr.ib(default=None)
     check_interval = attr.ib(default=timedelta(days=1))
     reissue_interval = attr.ib(default=timedelta(days=30))
     panic_interval = attr.ib(default=timedelta(days=15))
@@ -242,10 +245,12 @@ class AcmeIssuingService(Service):
         """
         Register and agree to the TOS.
         """
-        def _registered(ign):
+        def _registered(regr):
+            self._regr = regr
             self._registered = True
+        regr = messages.NewRegistration.from_data(email=self._email)
         return (
-            client.register()
+            client.register(regr)
             .addCallback(client.agree_to_tos)
             .addCallback(_registered))
 
