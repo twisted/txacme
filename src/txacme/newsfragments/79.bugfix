@@ -1,1 +1,0 @@
-The txacme endpoint plugin now lazily imports the rest of the code, avoiding ReactorAlreadyInstalled errors in various cases.

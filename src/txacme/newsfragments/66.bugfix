@@ -1,1 +1,0 @@
-``txacme.client.JWSClient`` now automatically retries a POST request that fails with a `badNonce` error.

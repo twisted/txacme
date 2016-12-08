@@ -1,1 +1,0 @@
-``txacme.store.DirectoryStore`` now handles bytes mode paths correctly.
