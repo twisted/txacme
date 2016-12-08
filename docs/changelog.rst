@@ -12,7 +12,7 @@ Features
 - INCOMPATIBLE CHANGE: AcmeIssuingService now takes a client creator,
   rather than a client, and invokes it for every issuing attempt.
   (#21)
-- INCOMPATIBLE CHANGE: The *_DIRECTORY constants are now in
+- INCOMPATIBLE CHANGE: The ``*_DIRECTORY`` constants are now in
   txacme.urls. (#28)
 - INCOMPATIBLE CHANGE: ``IResponder.start_responding`` and
   ``IResponder.stop_responding`` now take the server_name and
@@ -37,7 +37,7 @@ Bugfixes
 --------
 
 - ``txacme.client.JWSClient`` now automatically retries a POST request
-  that fails with a `badNonce` error. (#66)
+  that fails with a ``badNonce`` error. (#66)
 - ``txacme.store.DirectoryStore`` now handles bytes mode paths
   correctly. (#68)
 - The txacme endpoint plugin now lazily imports the rest of the code,
