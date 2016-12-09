@@ -16,13 +16,13 @@ matrix:
   - python: pypy
     env: TOXENV=pypy-twlatest-alldeps
   - python: 2.7
-    env: TOXENV=py27-twtrunk-alldeps
+    env: TOXENV=py27-twtrunk-acmaster-alldeps
   - python: 3.4
-    env: TOXENV=py34-twtrunk-alldeps
+    env: TOXENV=py34-twtrunk-acmaster-alldeps
   - python: 3.5
-    env: TOXENV=py35-twtrunk-alldeps
+    env: TOXENV=py35-twtrunk-acmaster-alldeps
   - python: pypy
-    env: TOXENV=pypy-twtrunk-alldeps
+    env: TOXENV=pypy-twtrunk-acmaster-alldeps
   - python: 2.7
     env: TOXENV=py27-twlowest-alldeps
   - python: 3.4
@@ -42,10 +42,10 @@ matrix:
   - python: 3.5
     env: TOXENV=flake8
   allow_failures:
-  - env: TOXENV=py27-twtrunk
-  - env: TOXENV=py34-twtrunk
-  - env: TOXENV=py35-twtrunk
-  - env: TOXENV=pypy-twtrunk
+  - env: TOXENV=py27-twtrunk-acmaster-alldeps
+  - env: TOXENV=py34-twtrunk-acmaster-alldeps
+  - env: TOXENV=py35-twtrunk-acmaster-alldeps
+  - env: TOXENV=pypy-twtrunk-acmaster-alldeps
 install:
   # Upgrade packaging tools separately, so that other installations are
   # performed with the upgraded tools.
