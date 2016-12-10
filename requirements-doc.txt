@@ -1,4 +1,4 @@
 .[test,libcloud]
-sphinx
-sphinx_rtd_theme
+sphinx==1.5
+sphinx-rtd-theme==0.1.9
 repoze.sphinx.autointerface>=0.8
