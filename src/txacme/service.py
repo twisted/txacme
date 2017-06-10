@@ -31,17 +31,18 @@ class AcmeIssuingService(Service):
     """
     A service for keeping certificates up to date by using an ACME server.
 
-    :param .ICertificateStore cert_store: The certificate store containing the
-        certificates to manage.
+    :type cert_store: `~txacme.interfaces.ICertificateStore`
+    :param cert_store: The certificate store containing the certificates to
+        manage.
+
     :type client_creator: Callable[[], Deferred[`txacme.client.Client`]]
-    :param client_creator: A callable called with no arguments
-        for creating the ACME client.  For example, ``partial(Client.from_url,
-        reactor=reactor, url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key,
-        alg=RS256)``.
+    :param client_creator: A callable called with no arguments for creating the
+        ACME client.  For example, ``partial(Client.from_url, reactor=reactor,
+        url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key, alg=RS256)``.
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
 
-    :type responders: List[`.IResponder`]
+    :type responders: List[`~txacme.interfaces.IResponder`]
     :param responders: Challenge responders.  Usually only one responder is
         needed; if more than one responder for the same type is provided, only
         the first will be used.

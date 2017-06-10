@@ -511,8 +511,7 @@ def _find_supported_challenge(authzr, responders):
     :raises NoSupportedChallenges: When a suitable challenge combination is not
         found.
 
-    :rtype: Tuple[`~txacme.interfaces.IResponder`,
-            `~acme.messages.ChallengeBody`]
+    :rtype: Tuple[`~txacme.interfaces.IResponder`, `~acme.messages.ChallengeBody`]
     :return: The responder and challenge that were found.
     """
     matches = [
