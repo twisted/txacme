@@ -99,9 +99,10 @@ The `server endpoint`_ is a simple wrapper that combines the functionality of th
    :noindex:
    :members:
 
-The `.ICertificateStore` and `.IResponder` interfaces are the main extension
-points for using the issuing service directly. For example, a custom
-implementation of `.ICertificateStore` might manage the certificate
+The `~txacme.interfaces.ICertificateStore` and `~txacme.interfaces.IResponder`
+interfaces are the main extension points for using the issuing service
+directly. For example, a custom implementation of
+`~txacme.interfaces.ICertificateStore` might manage the certificate
 configuration of a cloud load balancer, implementing the ``dns-01`` challenge
 type by modifying DNS entries in the cloud DNS configuration.
 

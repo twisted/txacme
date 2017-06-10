@@ -56,8 +56,10 @@ class AutoTLSEndpoint(object):
     :param client_creator: A callable called with the reactor and directory URL
         for creating the ACME client.  For example, ``partial(Client.from_url,
         key=acme_key, alg=RS256)``.
-    :param .ICertificateStore cert_store: The certificate store containing the
-        certificates to manage.  For example, `txacme.store.DirectoryStore`.
+    :type cert_store: `txacme.interfaces.ICertificateStore`
+    :param cert_store: The certificate
+        store containing the certificates to manage.  For example,
+        `txacme.store.DirectoryStore`.
     :param dict cert_mapping: The certificate mapping to use for SNI; for
         example, ``txsni.snimap.HostDirectoryMap``.  Usually this should
         correspond to the same underlying storage as ``cert_store``.

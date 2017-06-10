@@ -505,13 +505,14 @@ def _find_supported_challenge(authzr, responders):
     :param ~acme.messages.AuthorizationResource auth: The authorization to
         examine.
 
-    :type responder: List[`.IResponder`]
+    :type responder: List[`~txacme.interfaces.IResponder`]
     :param responder: The possible responders to use.
 
     :raises NoSupportedChallenges: When a suitable challenge combination is not
         found.
 
-    :rtype: Tuple[`.IResponder`, `~acme.messages.ChallengeBody`]
+    :rtype: Tuple[`~txacme.interfaces.IResponder`,
+            `~acme.messages.ChallengeBody`]
     :return: The responder and challenge that were found.
     """
     matches = [
@@ -533,7 +534,7 @@ def answer_challenge(authzr, client, responders):
         complete.
     :param .Client client: The ACME client.
 
-    :type responders: List[`.IResponder`]
+    :type responders: List[`~txacme.interfaces.IResponder`]
     :param responders: A list of responders that can be used to complete the
         challenge with.
 

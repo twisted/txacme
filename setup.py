@@ -58,6 +58,7 @@ setup(
         'test': [
             'fixtures>=1.4.0',
             'hypothesis>=3.1.0,<4.0.0',
+            'service_identity>=17.0.0',
             'testrepository>=0.0.20',
             'testscenarios',
             'testtools>=2.1.0',
