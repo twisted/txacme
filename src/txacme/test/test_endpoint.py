@@ -63,7 +63,7 @@ class EndpointTests(TestCase):
         client = FakeClient(RSA_KEY_512, clock)
         self.endpoint = AutoTLSEndpoint(
             reactor=clock,
-            directory=URL(u'https://example.com/'),
+            directory=URL.fromText(u'https://example.com/'),
             client_creator=lambda reactor, directory: succeed(client),
             cert_store=MemoryStore(),
             cert_mapping={},
