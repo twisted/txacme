@@ -659,7 +659,7 @@ class JWSClient(object):
     """
     HTTP client using JWS-signed messages.
     """
-    timeout = 30
+    timeout = 40
 
     def __init__(self, treq_client, key, alg,
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
