@@ -6,12 +6,12 @@ txacme: A Twisted implementation of the ACME protocol
    :target: http://txacme.readthedocs.org/en/stable/?badge=stable
    :alt: Documentation Status
 
-.. image:: https://travis-ci.org/mithrandi/txacme.svg?branch=master
-   :target: https://travis-ci.org/mithrandi/txacme
+.. image:: https://travis-ci.org/twisted/txacme.svg?branch=master
+   :target: https://travis-ci.org/twisted/txacme
    :alt: CI status
 
-.. image:: https://codecov.io/github/mithrandi/txacme/coverage.svg?branch=master
-   :target: https://codecov.io/github/mithrandi/txacme?branch=master
+.. image:: https://codecov.io/github/twisted/txacme/coverage.svg?branch=master
+   :target: https://codecov.io/github/twisted/txacme?branch=master
    :alt: Coverage
 
 .. teaser-begin
@@ -40,4 +40,4 @@ It’s rigorously tested on Python 2.7, 3.4+, and PyPy.
 
 .. _Read the Docs: https://txacme.readthedocs.io/
 
-.. _GitHub: https://github.com/mithrandi/txacme
+.. _GitHub: https://github.com/twisted/txacme
