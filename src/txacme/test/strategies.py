@@ -46,7 +46,11 @@ def urls():
         URL,
         scheme=s.just(u'https'),
         host=dns_names(),
-        path=s.lists(s.text(max_size=64), min_size=1, max_size=10))
+        path=s.lists(s.text(
+            max_size=64,
+            alphabet=s.characters(blacklist_characters=u'/?#',
+                                  blacklist_categories=('Cs',))
+        ), min_size=1, max_size=10))
 
 
 @s.composite
