@@ -46,8 +46,7 @@ def _add_txt_record(args, full_name, validation, client):
     """
     zone_id, rr_sets = args
 
-    # Right off the bat we can create the record we're going to insert. A
-    # quirk of Route53 is that these need to be surrounded by dquotes.
+    # Right off the bat we can create the record we're going to insert.
     resource_record = TXT(texts=(validation,))
 
     # We're interested only in the TXT RR Set. If it exists, we're going to
@@ -80,8 +79,7 @@ def _delete_txt_record(args, full_name, validation, client):
     """
     zone_id, rr_sets = args
 
-    # Right off the bat we can create the record we're going to remove. A
-    # quirk of Route53 is that these need to be surrounded by dquotes.
+    # Right off the bat we can create the record we're going to remove.
     resource_record = TXT(texts=(validation,))
 
     # We're interested only in the TXT RR Set. We expect this to exist: if it
