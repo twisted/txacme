@@ -3,6 +3,7 @@ import hashlib
 import attr
 
 from acme import jose
+from twisted.internet.defer import Deferred
 from txaws import AWSServiceRegion
 from txaws.route53.model import (
     RRSetKey, RRSet, Name, TXT, create_rrset, upsert_rrset, delete_rrset
@@ -12,6 +13,18 @@ from zope.interface import implementer
 from txacme.errors import ZoneNotFound
 from txacme.interfaces import IResponder
 
+
+def _sleep(rval, reactor, delay):
+    """
+    Returns a Deferred that does not fire until delay seconds have passed. This
+    is used simply to encourage a Twisted application to wait for the DNS
+    propagation to settle. This is expected to be used from
+    Deferred.addCallback, so it propagates the value it was called with to the
+    rest of the defer chain.
+    """
+    d = Deferred()
+    reactor.callLater(delay, d.callback, rval)
+    return d
 
 def _validation(response):
     """
@@ -121,16 +134,16 @@ class Route53DNSResponder(object):
     """
     challenge_type = u'dns-01'
 
+    _reactor = attr.ib()
     _client = attr.ib()
-    access_key = attr.ib()
-    secret_key = attr.ib()
     settle_delay = attr.ib()
 
     @classmethod
-    def create(cls, access_key, secret_key, settle_delay=60.0):
+    def create(cls, reactor, access_key, secret_key, settle_delay=60.0):
         """
         Create a responder.
 
+        :param reactor: The Twisted reactor to use for delay support.
         :param str access_key: The AWS IAM access key to use.
         :param str secret_key: The AWS IAM secret key to use.
         :param float settle_delay: The time, in seconds, to allow for the DNS
@@ -138,6 +151,7 @@ class Route53DNSResponder(object):
         """
         region = AWSServiceRegion(access_key=access_key, secret_key=secret_key)
         return cls(
+            reactor=reactor,
             client=region.get_route53_client(),
             settle_delay=settle_delay)
 
@@ -157,6 +171,7 @@ class Route53DNSResponder(object):
             validation=validation,
             client=self._client
         )
+        d.addCallback(_sleep, reactor=self._reactor, delay=self.settle_delay)
 
         return d
 
