@@ -4,7 +4,7 @@ import attr
 
 from acme import jose
 from twisted.internet.defer import Deferred
-from txaws import AWSServiceRegion
+from txaws.service import AWSServiceRegion
 from txaws.route53.model import (
     RRSetKey, RRSet, Name, TXT, create_rrset, upsert_rrset, delete_rrset
 )
@@ -48,7 +48,7 @@ def _add_txt_record(args, full_name, validation, client):
 
     # Right off the bat we can create the record we're going to insert. A
     # quirk of Route53 is that these need to be surrounded by dquotes.
-    resource_record = TXT(texts=(u'"%s"' % validation,))
+    resource_record = TXT(texts=(validation,))
 
     # We're interested only in the TXT RR Set. If it exists, we're going to
     # update ('upsert') it. If it does not exist, we're going to create it.
@@ -58,12 +58,16 @@ def _add_txt_record(args, full_name, validation, client):
         rr_set = rr_sets[key]
     except KeyError:
         rr_set = RRSet(
-            name=full_name, type=u'TXT', ttl=300, records=set(resource_record))
+            label=Name(full_name),
+            type=u'TXT',
+            ttl=300,
+            records=set([resource_record])
+        )
 
     rr_set.records.add(resource_record)
     rr_set_update = upsert_rrset(rr_set)
 
-    return client.change_resource_record_sets(zone_id, rr_set_update)
+    return client.change_resource_record_sets(zone_id, [rr_set_update])
 
 
 def _delete_txt_record(args, full_name, validation, client):
@@ -78,7 +82,7 @@ def _delete_txt_record(args, full_name, validation, client):
 
     # Right off the bat we can create the record we're going to remove. A
     # quirk of Route53 is that these need to be surrounded by dquotes.
-    resource_record = TXT(texts=(u'"%s"' % validation,))
+    resource_record = TXT(texts=(validation,))
 
     # We're interested only in the TXT RR Set. We expect this to exist: if it
     # doesn't, we'll just quietly exit as we have no work to do.
@@ -91,16 +95,16 @@ def _delete_txt_record(args, full_name, validation, client):
 
     # Now we want to check that the record is in the RR set. If it isn't, we
     # again quietly exit.
-    if resource_record not in rr_set:
+    if resource_record not in rr_set.records:
         return
 
-    if len(rr_set) == 1:
+    if len(rr_set.records) == 1:
         rr_set_update = delete_rrset(rr_set)
     else:
         rr_set.records.remove(resource_record)
         rr_set_update = upsert_rrset(rr_set)
 
-    return client.change_resource_record_sets(zone_id, rr_set_update)
+    return client.change_resource_record_sets(zone_id, [rr_set_update])
 
 
 def _get_rr_sets_for_zone(zone_id, client):
@@ -160,7 +164,7 @@ class Route53DNSResponder(object):
         Install a TXT challenge response record.
         """
         validation = _validation(response)
-        full_name = challenge.validation_domain_name(server_name)
+        full_name = challenge.validation_domain_name(server_name) + u'.'
 
         d = self._client.list_hosted_zones()
         d.addCallback(_get_zone_id, server_name=full_name)
@@ -180,7 +184,7 @@ class Route53DNSResponder(object):
         Remove a TXT challenge response record.
         """
         validation = _validation(response)
-        full_name = challenge.validation_domain_name(server_name)
+        full_name = challenge.validation_domain_name(server_name) + u'.'
 
         d = self._client.list_hosted_zones()
         d.addCallback(_get_zone_id, server_name=full_name)
