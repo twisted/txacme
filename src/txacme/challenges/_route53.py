@@ -136,8 +136,6 @@ class Route53DNSResponder(object):
         :param reactor: The Twisted reactor to use for delay support.
         :param str access_key: The AWS IAM access key to use.
         :param str secret_key: The AWS IAM secret key to use.
-        :param float settle_delay: The time, in seconds, to allow for the DNS
-            provider to propagate record changes.
         """
         # This isn't publicly exposed because we want to wait for txaws to
         # support the DNS change status API:
