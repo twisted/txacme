@@ -1,6 +1,6 @@
 import attr
 
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, succeed
 from twisted.internet.task import deferLater
 from txaws.service import AWSServiceRegion
 from txaws.route53.model import (
@@ -77,12 +77,12 @@ def _delete_txt_record(args, full_name, validation, client):
     try:
         rr_set = rr_sets[key]
     except KeyError:
-        return
+        return succeed(None)
 
     # Now we want to check that the record is in the RR set. If it isn't, we
     # again quietly exit.
     if resource_record not in rr_set.records:
-        return
+        return succeed(None)
 
     if len(rr_set.records) == 1:
         rr_set_update = delete_rrset(rr_set)
@@ -126,10 +126,10 @@ class Route53DNSResponder(object):
 
     _reactor = attr.ib()
     _client = attr.ib()
-    settle_delay = attr.ib()
+    _settle_delay = attr.ib()
 
     @classmethod
-    def create(cls, reactor, access_key, secret_key, settle_delay=60.0):
+    def create(cls, reactor, access_key, secret_key):
         """
         Create a responder.
 
@@ -139,6 +139,11 @@ class Route53DNSResponder(object):
         :param float settle_delay: The time, in seconds, to allow for the DNS
             provider to propagate record changes.
         """
+        # This isn't publicly exposed because we want to wait for txaws to
+        # support the DNS change status API:
+        # http://docs.aws.amazon.com/Route53/latest/APIReference/API_GetChange.html
+        # Until that time, we hard-code a settle delay.
+        settle_delay = 60.0
         region = AWSServiceRegion(access_key=access_key, secret_key=secret_key)
         return cls(
             reactor=reactor,
@@ -161,7 +166,7 @@ class Route53DNSResponder(object):
             validation=validation,
             client=self._client
         )
-        d.addCallback(_sleep, reactor=self._reactor, delay=self.settle_delay)
+        d.addCallback(_sleep, reactor=self._reactor, delay=self._settle_delay)
 
         return d
 
