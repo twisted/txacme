@@ -4,6 +4,7 @@ import attr
 
 from acme import jose
 from twisted.internet.defer import Deferred
+from twisted.internet.task import deferLater
 from txaws.service import AWSServiceRegion
 from txaws.route53.model import (
     RRSetKey, RRSet, Name, TXT, create_rrset, upsert_rrset, delete_rrset
@@ -22,9 +23,7 @@ def _sleep(rval, reactor, delay):
     Deferred.addCallback, so it propagates the value it was called with to the
     rest of the defer chain.
     """
-    d = Deferred()
-    reactor.callLater(delay, d.callback, rval)
-    return d
+    return deferLater(reactor, delay, lambda: rval)
 
 def _validation(response):
     """
