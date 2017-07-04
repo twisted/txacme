@@ -1,8 +1,5 @@
-import hashlib
-
 import attr
 
-from acme import jose
 from twisted.internet.defer import Deferred
 from twisted.internet.task import deferLater
 from txaws.service import AWSServiceRegion
@@ -11,6 +8,7 @@ from txaws.route53.model import (
 )
 from zope.interface import implementer
 
+from txacme.challenges._dnsutil import _validation
 from txacme.errors import ZoneNotFound
 from txacme.interfaces import IResponder
 
@@ -24,15 +22,6 @@ def _sleep(rval, reactor, delay):
     rest of the defer chain.
     """
     return deferLater(reactor, delay, lambda: rval)
-
-def _validation(response):
-    """
-    Get the validation value for a challenge response.
-    """
-    # TODO: This is just duplicated directly from _libcloud.py. Should we hoist
-    # this out to a common utility module?
-    h = hashlib.sha256(response.key_authorization.encode("utf-8"))
-    return jose.b64encode(h.digest()).decode()
 
 
 def _add_txt_record(args, full_name, validation, client):

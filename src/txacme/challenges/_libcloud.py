@@ -1,15 +1,14 @@
-import hashlib
 import time
 from threading import Thread
 
 import attr
-from acme import jose
 from libcloud.dns.providers import get_driver
 from twisted._threads import pool
 from twisted.internet.defer import Deferred
 from twisted.python.failure import Failure
 from zope.interface import implementer
 
+from txacme.challenges._dnsutil import _validation
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
 from txacme.util import const
@@ -88,14 +87,6 @@ def _get_existing(driver, zone_name, server_name, validation):
         record.type == 'TXT' and
         record.data == validation]
     return zone, existing, subdomain
-
-
-def _validation(response):
-    """
-    Get the validation value for a challenge response.
-    """
-    h = hashlib.sha256(response.key_authorization.encode("utf-8"))
-    return jose.b64encode(h.digest()).decode()
 
 
 @attr.s(hash=False)
