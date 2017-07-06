@@ -1,10 +1,10 @@
 import attr
 
-from twisted.internet.defer import Deferred, succeed
+from twisted.internet.defer import succeed
 from twisted.internet.task import deferLater
 from txaws.service import AWSServiceRegion
 from txaws.route53.model import (
-    RRSetKey, RRSet, Name, TXT, create_rrset, upsert_rrset, delete_rrset
+    RRSetKey, RRSet, Name, TXT, upsert_rrset, delete_rrset
 )
 from zope.interface import implementer
 
