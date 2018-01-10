@@ -34,7 +34,7 @@ def _defer_to_worker(deliver, worker, work, *args, **kwargs):
     def wrapped_work():
         try:
             result = work(*args, **kwargs)
-        except:
+        except BaseException:
             f = Failure()
             deliver(lambda: deferred.errback(f))
         else:

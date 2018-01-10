@@ -347,7 +347,7 @@ class AcmeIssuingServiceTests(TestCase):
         """
         try:
             1 / 0
-        except:
+        except BaseException:
             f = Failure()
         _default_panic(f, u'server_name')
         self.assertThat(flush_logged_errors(), Equals([f]))
