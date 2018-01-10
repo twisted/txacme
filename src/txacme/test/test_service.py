@@ -288,7 +288,7 @@ class AcmeIssuingServiceTests(TestCase):
         """
         now = datetime(2000, 1, 1, 0, 0, 0)
         certs = {
-            u'a' * 100: _generate_cert(
+            u'example.com': _generate_cert(
                 u'example.com',
                 not_valid_before=now - timedelta(seconds=1),
                 not_valid_after=now + timedelta(days=31)),
@@ -302,16 +302,23 @@ class AcmeIssuingServiceTests(TestCase):
                 succeeded(Is(None)))
             self.assertThat(fixture.responder.challenges, HasLength(0))
 
+            fixture.controller.pause()
             fixture.clock.advance(36 * 60 * 60)
+            # Resume the client.request_issuance deferred with an exception.
+            fixture.controller.resume(Failure(Exception()))
             self.assertThat(flush_logged_errors(), HasLength(1))
             self.assertThat(panics, Equals([]))
             self.assertThat(fixture.responder.challenges, HasLength(0))
 
+            fixture.controller.pause()
             fixture.clock.advance(15 * 24 * 60 * 60)
+            # Resume the client.request_issuance deferred with an exception.
+            fixture.controller.resume(Failure(Exception()))
             self.assertThat(
                 panics,
                 MatchesListwise([
-                    MatchesListwise([IsInstance(Failure), Equals(u'a' * 100)]),
+                    MatchesListwise([IsInstance(Failure),
+                                     Equals(u'example.com')]),
                     ]))
             self.assertThat(fixture.responder.challenges, HasLength(0))
 

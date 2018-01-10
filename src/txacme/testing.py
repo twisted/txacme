@@ -45,14 +45,17 @@ class FakeClientController(object):
         """
         self.paused = True
 
-    def resume(self):
+    def resume(self, value=None):
         """
         Resume issuing, allowing any pending issuances to proceed.
+
+        :param value: An (optional) value with which pending deferreds
+            will be called back.
         """
         _waiting = self._waiting
         self._waiting = []
         for d in _waiting:
-            d.callback(None)
+            d.callback(value)
 
     def count(self):
         """
