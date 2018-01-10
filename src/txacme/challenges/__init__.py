@@ -9,4 +9,12 @@ except ImportError:
     pass
 
 
-__all__ = ['HTTP01Responder', 'LibcloudDNSResponder', 'TLSSNI01Responder']
+try:
+    from ._route53 import Route53DNSResponder
+except ImportError:
+    # txaws may not be installed
+    pass
+
+
+__all__ = ['HTTP01Responder', 'LibcloudDNSResponder', 'TLSSNI01Responder',
+           'Route53DNSResponder']

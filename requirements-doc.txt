@@ -1,4 +1,4 @@
-.[test,libcloud]
+.[test,libcloud,txaws]
 sphinx
 sphinx_rtd_theme
 repoze.sphinx.autointerface>=0.8

@@ -55,6 +55,9 @@ setup(
         'libcloud': [
             'apache-libcloud',
         ],
+        'txaws': [
+            'txaws',
+        ],
         'test': [
             'fixtures>=1.4.0',
             'hypothesis>=3.1.0,<4.0.0',
