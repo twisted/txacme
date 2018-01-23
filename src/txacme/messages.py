@@ -7,7 +7,7 @@ provided by the `acme` library.
 ..  seealso:: `acme.messages`
 """
 from acme.fields import Resource
-from acme.jose import Field, JSONObjectWithFields
+from josepy import Field, JSONObjectWithFields
 
 from txacme.util import decode_csr, encode_csr
 

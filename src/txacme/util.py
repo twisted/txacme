@@ -5,8 +5,9 @@ import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
-from acme import jose
-from acme.jose.errors import DeserializationError
+from josepy.errors import DeserializationError
+from josepy.json_util import encode_b64jose, decode_b64jose
+
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -106,7 +107,7 @@ def encode_csr(csr):
 
     :rtype: str
     """
-    return jose.encode_b64jose(csr.public_bytes(serialization.Encoding.DER))
+    return encode_b64jose(csr.public_bytes(serialization.Encoding.DER))
 
 
 def decode_csr(b64der):
@@ -120,7 +121,7 @@ def decode_csr(b64der):
     """
     try:
         return x509.load_der_x509_csr(
-            jose.decode_b64jose(b64der), default_backend())
+            decode_b64jose(b64der), default_backend())
     except ValueError as error:
         raise DeserializationError(error)
 

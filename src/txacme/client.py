@@ -4,8 +4,13 @@ ACME client API (like :mod:`acme.client`) implementation for Twisted.
 import re
 import time
 
-from acme import errors, jose, jws, messages
+from acme import errors, messages
+from acme.jws import JWS, Header
 from acme.messages import STATUS_PENDING, STATUS_PROCESSING, STATUS_VALID
+
+from josepy.jwa import RS256
+from josepy.errors import DeserializationError
+
 from eliot.twisted import DeferredContext
 from treq import json_content
 from treq.client import HTTPClient
@@ -101,7 +106,7 @@ class Client(object):
         self.key = key
 
     @classmethod
-    def from_url(cls, reactor, url, key, alg=jose.RS256, jws_client=None):
+    def from_url(cls, reactor, url, key, alg=RS256, jws_client=None):
         """
         Construct a client from an ACME directory at a given URL.
 
@@ -109,7 +114,7 @@ class Client(object):
             See `txacme.urls` for constants for various well-known public
             directories.
         :param reactor: The Twisted reactor to use.
-        :param ~acme.jose.jwk.JWK key: The client key to use.
+        :param ~josepy.jwk.JWK key: The client key to use.
         :param alg: The signing algorithm to use.  Needs to be compatible with
             the type of key used.
         :param JWSClient jws_client: The underlying client to use, or ``None``
@@ -676,7 +681,7 @@ class JWSClient(object):
 
         ..  todo:: Implement ``acmePath``.
 
-        :param ~acme.jose.interfaces.JSONDeSerializable obj:
+        :param ~josepy.interfaces.JSONDeSerializable obj:
         :param bytes nonce:
 
         :rtype: `bytes`
@@ -686,7 +691,7 @@ class JWSClient(object):
                           nonce=nonce):
             jobj = obj.json_dumps().encode()
             return (
-                jws.JWS.sign(
+                JWS.sign(
                     payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
                 .json_dumps()
                 .encode())
@@ -814,10 +819,11 @@ class JWSClient(object):
                 raise errors.MissingNonce(response)
             else:
                 try:
-                    decoded_nonce = jws.Header._fields['nonce'].decode(
-                        nonce.decode('ascii'))
+                    decoded_nonce = Header._fields['nonce'].decode(
+                        nonce.decode('ascii')
+                    )
                     action.add_success_fields(nonce=decoded_nonce)
-                except jose.DeserializationError as error:
+                except DeserializationError as error:
                     raise errors.BadNonce(nonce, error)
                 self._nonces.add(decoded_nonce)
                 return response
@@ -847,7 +853,7 @@ class JWSClient(object):
         POST an object and check the response.
 
         :param str url: The URL to request.
-        :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
+        :param ~josepy.interfaces.JSONDeSerializable obj: The serializable
             payload of the request.
         :param bytes content_type: The expected content type of the response.
 
@@ -874,7 +880,7 @@ class JWSClient(object):
         is received.
 
         :param str url: The URL to request.
-        :param ~acme.jose.interfaces.JSONDeSerializable obj: The serializable
+        :param ~josepy.interfaces.JSONDeSerializable obj: The serializable
             payload of the request.
         :param bytes content_type: The expected content type of the response.
             By default, JSON.
