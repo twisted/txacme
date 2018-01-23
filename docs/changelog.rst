@@ -3,6 +3,22 @@ txacme changelog
 
 .. towncrier release notes start
 
+Txacme 0.9.2 (2018-01-24)
+=========================
+
+Features
+--------
+
+- The default client timeout is now 40 seconds to allow Let's Encrypt's server
+  side timeout of 30 seconds to kick in first. (#111)
+
+
+Misc
+----
+
+- #115
+
+
 Txacme 0.9.1 (2016-12-08)
 =========================
 
