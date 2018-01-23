@@ -3,7 +3,13 @@ from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
 import attr
-from acme import challenges, errors, jose, jws, messages
+
+from josepy.jwa import RS256, RS384
+from josepy.jwk import JWKRSA
+from josepy.jws import JWS
+from josepy.b64 import b64encode, b64decode
+
+from acme import challenges, errors, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -79,7 +85,7 @@ RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
     )
 ).private_key(default_backend())
 
-RSA_KEY_512 = jose.JWKRSA(key=RSA_KEY_512_RAW)
+RSA_KEY_512 = JWKRSA(key=RSA_KEY_512_RAW)
 
 
 class Nearly(object):
@@ -102,7 +108,7 @@ class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, key=None, alg=jose.RS256):
+    def __init__(self, sequence, key=None, alg=RS256):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
         self._directory = messages.Directory({
@@ -116,7 +122,7 @@ class ClientFixture(Fixture):
             u'https://example.org/acme/new-cert',
             })
         if key is None:
-            key = jose.JWKRSA(key=generate_private_key('rsa'))
+            key = JWKRSA(key=generate_private_key('rsa'))
         self._key = key
         self._alg = alg
 
@@ -151,7 +157,7 @@ def _nonce_response(url, nonce):
             Equals(b'')]),
         (http.NOT_ALLOWED,
          {b'content-type': JSON_CONTENT_TYPE,
-          b'replay-nonce': jose.b64encode(nonce)},
+          b'replay-nonce': b64encode(nonce)},
          b'{}'))
 
 
@@ -202,11 +208,11 @@ def on_jws(matcher, nonce=None):
     if nonce is not None:
         def extract_nonce(j):
             protected = json.loads(j.signatures[0].protected)
-            return jose.b64.b64decode(protected[u'nonce'])
+            return b64decode(protected[u'nonce'])
         nonce_matcher = AfterPreprocessing(extract_nonce, Equals(nonce))
     return on_json(
         AfterPreprocessing(
-            jws.JWS.from_json,
+            JWS.from_json,
             MatchesAll(
                 MatchesPredicate(
                     methodcaller('verify'), '%r does not verify'),
@@ -280,7 +286,7 @@ class ClientTests(TestCase):
                  Always()]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2')},
+                b'replay-nonce': b64encode(b'Nonce2')},
                b'{}'))],
             self.expectThat)
         client = self.useFixture(ClientFixture(sequence)).client
@@ -305,7 +311,7 @@ class ClientTests(TestCase):
                 Always()]),
             (http.CREATED,
              {b'content-type': JSON_CONTENT_TYPE,
-              b'replay-nonce': jose.b64encode(b'Nonce2'),
+              b'replay-nonce': b64encode(b'Nonce2'),
               b'location': b'https://example.org/acme/reg/1',
               b'link': b','.join([
                   b'<https://example.org/acme/new-authz>;rel="next"',
@@ -357,7 +363,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/reg/1',
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
@@ -408,7 +414,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.CONFLICT,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/reg/1',
                 },
                _json_dumps(
@@ -426,7 +432,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.ACCEPTED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'replay-nonce': b64encode(b'Nonce3'),
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
@@ -477,7 +483,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example2@example.com']}))]),
               (http.CONFLICT,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/reg/1',
                 },
                _json_dumps(
@@ -495,7 +501,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example2@example.com']}))]),
               (http.ACCEPTED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'replay-nonce': b64encode(b'Nonce3'),
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
@@ -546,7 +552,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.SERVICE_UNAVAILABLE,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 },
                _json_dumps(
                    {u'status': http.SERVICE_UNAVAILABLE,
@@ -584,7 +590,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.SERVICE_UNAVAILABLE,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 },
                _json_dumps(
                    {u'status': http.SERVICE_UNAVAILABLE,
@@ -602,7 +608,7 @@ class ClientTests(TestCase):
                  }), nonce=b'Nonce2')]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'replay-nonce': b64encode(b'Nonce3'),
                 b'location': b'https://example.org/acme/reg/1',
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
@@ -656,7 +662,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.SERVICE_UNAVAILABLE,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 },
                _json_dumps(
                    {u'status': http.SERVICE_UNAVAILABLE,
@@ -673,7 +679,7 @@ class ClientTests(TestCase):
                      u'contact': [u'mailto:example@example.com']}))]),
               (http.SERVICE_UNAVAILABLE,
                {b'content-type': JSON_ERROR_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce3'),
+                b'replay-nonce': b64encode(b'Nonce3'),
                 },
                _json_dumps(
                    {u'status': http.SERVICE_UNAVAILABLE,
@@ -714,7 +720,7 @@ class ClientTests(TestCase):
                      u'agreement': Equals(tos)}))]),
               (http.ACCEPTED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'link': b','.join([
                     b'<https://example.org/acme/new-authz>;rel="next"',
                     b'<https://example.org/acme/recover-reg>;rel="recover"',
@@ -768,7 +774,7 @@ class ClientTests(TestCase):
                 Always()]),
              (http.OK,
               {b'content-type': JSON_CONTENT_TYPE,
-               b'replay-nonce': jose.b64encode(b'Nonce')},
+               b'replay-nonce': b64encode(b'Nonce')},
               _json_dumps({
                   u'new-reg': new_reg,
                   u'revoke-cert': u'https://example.org/acme/revoke-cert',
@@ -782,9 +788,9 @@ class ClientTests(TestCase):
         with sequence.consume(self.fail):
             d = Client.from_url(
                 reactor, URL.fromText(u'https://example.org/acme/'),
-                key=RSA_KEY_512, alg=jose.RS256,
+                key=RSA_KEY_512, alg=RS256,
                 jws_client=JWSClient(
-                    treq_client, key=RSA_KEY_512, alg=jose.RS256))
+                    treq_client, key=RSA_KEY_512, alg=RS256))
             self.assertThat(
                 d,
                 succeeded(
@@ -800,7 +806,7 @@ class ClientTests(TestCase):
         provided.
         """
         reactor = MemoryReactor()
-        client = _default_client(None, reactor, RSA_KEY_512, jose.RS384)
+        client = _default_client(None, reactor, RSA_KEY_512, RS384)
         self.assertThat(client, IsInstance(JWSClient))
         # We should probably assert some stuff about the treq.HTTPClient, but
         # it's hard without doing awful mock stuff.
@@ -838,7 +844,7 @@ class ClientTests(TestCase):
                      }))]),
               (http.CREATED,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'location': b'https://example.org/acme/authz/1',
                 b'link': b'<https://example.org/acme/new-cert>;rel="next"',
                 },
@@ -937,7 +943,7 @@ class ClientTests(TestCase):
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'link': b'<https://example.org/acme/authz/1>;rel="up"',
                 },
                _json_dumps({
@@ -1030,7 +1036,7 @@ class ClientTests(TestCase):
                 identifier=identifier))
         response_headers = {
             b'content-type': JSON_CONTENT_TYPE,
-            b'replay-nonce': jose.b64encode(b'Nonce2'),
+            b'replay-nonce': b64encode(b'Nonce2'),
             b'location': b'https://example.org/acme/authz/1',
             b'link': b'<https://example.org/acme/new-cert>;rel="next"',
             }
@@ -1199,7 +1205,7 @@ class ClientTests(TestCase):
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
-                b'replay-nonce': jose.b64encode(b'Nonce2'),
+                b'replay-nonce': b64encode(b'Nonce2'),
                 b'link': b'<https://example.org/acme/authz/1>;rel="up"',
                 },
                _json_dumps({
@@ -1246,7 +1252,7 @@ class ClientTests(TestCase):
                     Always()]),
                 (http.ACCEPTED,
                  {b'content-type': JSON_CONTENT_TYPE,
-                  b'replay-nonce': jose.b64encode(b'nonce2'),
+                  b'replay-nonce': b64encode(b'nonce2'),
                   b'location': uri.encode('ascii'),
                   b'link': b'<https://example.org/acme/new-cert>;rel="next"'},
                  _json_dumps({
@@ -1404,7 +1410,7 @@ class ClientTests(TestCase):
                     Equals(cert_request)))]),
              (http.CREATED,
               {b'content-type': DER_CONTENT_TYPE,
-               b'replay-nonce': jose.b64encode(b'nonce2'),
+               b'replay-nonce': b64encode(b'nonce2'),
                b'location': b'https://example.org/acme/cert/asdf',
                b'link': u'<{!s}>;rel="up"'.format(
                    issuer_url.asURI().asText()).encode('utf-8')},

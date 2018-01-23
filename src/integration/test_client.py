@@ -6,7 +6,7 @@ from __future__ import print_function
 from functools import partial
 from os import getenv
 
-from acme.jose import JWKRSA
+from josepy.jwk import JWKRSA
 from acme.messages import NewRegistration, STATUS_PENDING
 from cryptography.hazmat.primitives import serialization
 from eliot import start_action

@@ -4,7 +4,7 @@ Tests for `txacme.challenges`.
 from operator import methodcaller
 
 from acme import challenges
-from acme.jose import b64encode
+from josepy.b64 import b64encode
 from hypothesis import strategies as s
 from hypothesis import assume, example, given
 from testtools import skipIf, TestCase

@@ -3,7 +3,7 @@ Tests for `txacme.endpoint`.
 """
 from datetime import datetime
 
-from acme.jose import JWKRSA
+from josepy.jwk import JWKRSA
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fixtures import TempDir

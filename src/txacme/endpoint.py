@@ -6,7 +6,8 @@ from datetime import timedelta
 from functools import partial
 
 import attr
-from acme.jose import JWKRSA, RS256
+from josepy.jwk import JWKRSA
+from josepy.jwa import RS256
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from twisted.internet.defer import maybeDeferred

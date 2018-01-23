@@ -2,8 +2,8 @@ from codecs import decode
 
 import attr
 from acme import challenges
-from acme.jose import b64encode
-from acme.jose.errors import DeserializationError
+from josepy.b64 import b64encode
+from josepy.errors import DeserializationError
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -119,7 +119,7 @@ class CSRTests(TestCase):
     def test_decode_garbage(self):
         """
         If decoding fails, `~txacme.util.decode_csr` raises
-        `~acme.jose.errors.DeserializationError`.
+        `~josepy.errors.DeserializationError`.
         """
         with ExpectedException(DeserializationError):
             decode_csr(u'blah blah not a valid CSR')

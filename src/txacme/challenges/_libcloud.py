@@ -3,7 +3,7 @@ import time
 from threading import Thread
 
 import attr
-from acme import jose
+from josepy.b64 import b64encode
 from libcloud.dns.providers import get_driver
 from twisted._threads import pool
 from twisted.internet.defer import Deferred
@@ -95,7 +95,7 @@ def _validation(response):
     Get the validation value for a challenge response.
     """
     h = hashlib.sha256(response.key_authorization.encode("utf-8"))
-    return jose.b64encode(h.digest()).decode()
+    return b64encode(h.digest()).decode()
 
 
 @attr.s(hash=False)
