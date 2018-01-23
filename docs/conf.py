@@ -307,6 +307,8 @@ intersphinx_mapping = {
                (None, 'python-objects.inv')),
     'acme': ('https://acme-python.readthedocs.io/en/latest/',
              (None, 'acme-objects.inv')),
+    'jose': ('https://josepy.readthedocs.io/en/latest/',
+             (None, 'jose-objects.inv')),
     'twisted': ('https://twisted.readthedocs.io/en/latest/',
                 (None, 'twisted-objects.inv')),
     'cryptography': ('https://cryptography.io/en/latest/',
