@@ -1,0 +1,4 @@
+[tool.towncrier]
+package = 'txacme'
+package_dir = 'src/'
+filename = 'docs/changelog.rst'
