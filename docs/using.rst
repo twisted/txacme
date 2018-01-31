@@ -22,6 +22,12 @@ directly with a database and pass an instance of this to the server endpoint.
 Server endpoint string
 ----------------------
 
+Note: as of 09-Jan-2018, the Let's Encrypt server has indefinitely
+`disabled`_ the ``tls-sni-01`` validation method needed by these endpoints
+(for new sites), due to a security problem. A future ``txacme`` release might
+reimplement these with a different validation method: see `Issue 129`_ for
+details.
+
 The simplest way to use txacme is the stream server endpoint string. Two endpoint
 parsers are provided, under the ``le:`` (Let's Encrypt) and ``lets:`` (Let's
 Encrypt Test in Staging) prefixes. The endpoint takes as parameters a directory
@@ -42,6 +48,8 @@ store certificates in the ``/srv/www/certs`` directory:
    the production environment is highly recommended.
 
    .. _stringent limits: https://community.letsencrypt.org/t/rate-limits-for-lets-encrypt/6769
+   .. _disabled: https://community.letsencrypt.org/t/important-what-you-need-to-know-about-tls-sni-validation-issues/50811
+   .. _Issue 129: https://github.com/twisted/txacme/issues/129
 
 The ACME client key will be stored in ``client.key`` in the certificate
 directory, if this file does not exist a new key will automatically be
