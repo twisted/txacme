@@ -4,13 +4,12 @@
 from collections import Mapping
 
 import attr
+from OpenSSL import crypto
 from twisted.internet.ssl import CertificateOptions
 from zope.interface import implementer
 
 from txacme.interfaces import IResponder
-from txacme.util import (
-    cert_cryptography_to_pyopenssl, generate_tls_sni_01_cert,
-    key_cryptography_to_pyopenssl)
+from txacme.util import generate_tls_sni_01_cert
 
 
 @attr.s(hash=False)
@@ -72,8 +71,8 @@ class TLSSNI01Responder(object):
             server_name, _generate_private_key=self._generate_private_key)
         server_name = server_name.encode('utf-8')
         self._challenge_options[server_name] = CertificateOptions(
-            certificate=cert_cryptography_to_pyopenssl(cert),
-            privateKey=key_cryptography_to_pyopenssl(pkey))
+            certificate=crypto.X509.from_cryptography(cert),
+            privateKey=crypto.PKey.from_cryptography_key(pkey))
 
     def stop_responding(self, server_name, challenge, response):
         """
