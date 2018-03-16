@@ -13,7 +13,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from OpenSSL import crypto
 from twisted.internet.defer import maybeDeferred
 from twisted.python.url import URL
 
@@ -61,29 +60,6 @@ def generate_tls_sni_01_cert(server_name, key_type=u'rsa',
             backend=default_backend())
         )
     return (cert, key)
-
-
-def cert_cryptography_to_pyopenssl(cert):
-    """
-    Convert a `cryptography.x509.Certificate` object to an
-    ``OpenSSL.crypto.X509`` object.
-    """
-    return crypto.load_certificate(
-        crypto.FILETYPE_PEM,
-        cert.public_bytes(serialization.Encoding.PEM))
-
-
-def key_cryptography_to_pyopenssl(key):
-    """
-    Convert a Cryptography private key object to an ``OpenSSL.crypto.PKey``
-    object.
-    """
-    return crypto.load_privatekey(
-        crypto.FILETYPE_PEM,
-        key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption()))
 
 
 def tap(f):
@@ -189,6 +165,5 @@ def const(x):
 
 __all__ = [
     'generate_private_key', 'generate_tls_sni_01_cert',
-    'cert_cryptography_to_pyopenssl', 'key_cryptography_to_pyopenssl', 'tap',
     'encode_csr', 'decode_csr', 'csr_for_names', 'clock_now',
-    'check_directory_url_type', 'const']
+    'check_directory_url_type', 'const', 'tap']
