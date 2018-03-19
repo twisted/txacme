@@ -51,6 +51,7 @@ setup(
         'treq>=15.1.0',
         'twisted[tls]>=15.5.0',
         'txsni',
+        'pyopenssl>=17.1.0',
         ],
     extras_require={
         'libcloud': [
