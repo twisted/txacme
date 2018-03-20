@@ -1,6 +1,7 @@
 from codecs import decode
 
 import attr
+from OpenSSL import crypto
 from acme import challenges
 from josepy.b64 import b64encode
 from josepy.errors import DeserializationError
@@ -19,9 +20,8 @@ from txacme.test import strategies as ts
 from txacme.test.matchers import ValidForName
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
-    cert_cryptography_to_pyopenssl, const, csr_for_names, decode_csr,
-    encode_csr, generate_private_key, generate_tls_sni_01_cert,
-    key_cryptography_to_pyopenssl)
+    const, csr_for_names, decode_csr, encode_csr,
+    generate_private_key, generate_tls_sni_01_cert)
 
 
 class GeneratePrivateKeyTests(TestCase):
@@ -87,11 +87,11 @@ class GenerateCertTests(TestCase):
 
         self.assertThat(cert, ValidForName(server_name))
 
-        ocert = cert_cryptography_to_pyopenssl(cert)
+        ocert = crypto.X509.from_cryptography(cert)
         self.assertThat(
             decode(ocert.digest('sha256').replace(b':', b''), 'hex'),
             Equals(cert.fingerprint(hashes.SHA256())))
-        okey = key_cryptography_to_pyopenssl(pkey)
+        okey = crypto.PKey.from_cryptography_key(pkey)
         # TODO: Can we assert more here?
         self.assertThat(okey.bits(), Equals(pkey.key_size))
 
