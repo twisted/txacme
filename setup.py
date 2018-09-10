@@ -44,7 +44,7 @@ setup(
         ],
     install_requires=[
         'acme>=0.21.0',
-        'attrs>=15.2.0',
+        'attrs>=17.4.0',
         'eliot>=0.8.0',
         'josepy',
         'pem>=16.1.0',
