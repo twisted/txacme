@@ -2,8 +2,8 @@
 branch = True
 source = txacme
 omit =
-    src/txacme/_version.py
-    src/txacme/interfaces.py
+    txacme/_version.py
+    txacme/interfaces.py
 
 [paths]
 source =
