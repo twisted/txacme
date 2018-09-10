@@ -16,7 +16,7 @@ matrix:
   - python: 3.6
     env: TOXENV=py36-twlatest-alldeps
   - python: 3.7
-    env: TOXENV=py37twlatest-alldeps
+    env: TOXENV=py37-twlatest-alldeps
     dist: xenial
     sudo: true
   - python: pypy
