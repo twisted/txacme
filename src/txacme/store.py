@@ -17,7 +17,7 @@ class DirectoryStore(object):
     """
     A certificate store that keeps certificates in a directory on disk.
     """
-    path = attr.ib(convert=methodcaller('asTextMode'))
+    path = attr.ib(converter=methodcaller('asTextMode'))
 
     def _get(self, server_name):
         """

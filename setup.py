@@ -46,7 +46,7 @@ setup(
         ],
     install_requires=[
         'acme>=0.21.0',
-        'attrs>=15.2.0',
+        'attrs>=17.4.0',
         'eliot>=0.8.0',
         'josepy',
         'pem>=16.1.0',
@@ -61,7 +61,7 @@ setup(
         ],
         'test': [
             'fixtures>=1.4.0',
-            'hypothesis>=3.1.0,<4.0.0',
+            'hypothesis>=3.20.0,<4.0.0',
             'service_identity>=17.0.0',
             'testrepository>=0.0.20',
             'testscenarios',
