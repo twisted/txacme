@@ -13,6 +13,12 @@ matrix:
     env: TOXENV=py34-twlatest-alldeps
   - python: 3.5
     env: TOXENV=py35-twlatest-alldeps
+  - python: 3.6
+    env: TOXENV=py36-twlatest-alldeps
+  - python: 3.7
+    env: TOXENV=py357twlatest-alldeps
+    dist: xenial
+    sudo: true
   - python: pypy
     env: TOXENV=pypy-twlatest-alldeps
   - python: 2.7
@@ -21,6 +27,12 @@ matrix:
     env: TOXENV=py34-twtrunk-acmaster-alldeps
   - python: 3.5
     env: TOXENV=py35-twtrunk-acmaster-alldeps
+  - python: 3.6
+    env: TOXENV=py36-twtrunk-acmaster-alldeps
+  - python: 3.7
+    env: TOXENV=py37-twtrunk-acmaster-alldeps
+    dist: xenial
+    sudo: true
   - python: pypy
     env: TOXENV=pypy-twtrunk-acmaster-alldeps
   - python: 2.7
@@ -29,6 +41,12 @@ matrix:
     env: TOXENV=py34-twlowest-alldeps
   - python: 3.5
     env: TOXENV=py35-twlowest-alldeps
+  - python: 3.6
+    env: TOXENV=py36-twlowest-alldeps
+  - python: 3.7
+    env: TOXENV=py37-twlowest-alldeps
+    dist: xenial
+    sudo: true
   - python: pypy
     env: TOXENV=pypy-twlowest-alldeps
   - python: 2.7
@@ -45,6 +63,8 @@ matrix:
   - env: TOXENV=py27-twtrunk-acmaster-alldeps
   - env: TOXENV=py34-twtrunk-acmaster-alldeps
   - env: TOXENV=py35-twtrunk-acmaster-alldeps
+  - env: TOXENV=py36-twtrunk-acmaster-alldeps
+  - env: TOXENV=py37-twtrunk-acmaster-alldeps
   - env: TOXENV=pypy-twtrunk-acmaster-alldeps
 install:
   # Upgrade packaging tools separately, so that other installations are
