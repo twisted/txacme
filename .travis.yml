@@ -57,7 +57,7 @@ matrix:
       apt:
         packages:
         - libenchant-dev
-  - python: 3.5
+  - python: 3.6
     env: TOXENV=flake8
   allow_failures:
   - env: TOXENV=py27-twtrunk-acmaster-alldeps
