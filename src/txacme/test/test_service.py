@@ -9,7 +9,7 @@ from cryptography.x509.oid import NameOID
 from fixtures import Fixture
 from hypothesis import strategies as s
 from hypothesis import example, given
-from hypothesis.extra.datetime import datetimes
+from hypothesis.strategies import datetimes
 from pem import Certificate, RSAPrivateKey
 from testtools import run_test_with, TestCase
 from testtools.matchers import (
@@ -157,7 +157,8 @@ def panicing_cert(draw, now, panic):
 
 @s.composite
 def panicing_certs_fixture(draw):
-    now = draw(datetimes(min_year=1971, max_year=2030, timezones=[]))
+    now = draw(datetimes(
+        min_value=datetime(1971, 1, 1), max_value=datetime(2030, 1, 1)))
     panic = timedelta(seconds=draw(
         s.integers(min_value=60, max_value=60 * 60 * 24)))
     certs = dict(
@@ -187,7 +188,8 @@ class AcmeIssuingServiceTests(TestCase):
     @example(now=datetime(2000, 1, 1, 0, 0, 0),
              certs=[(timedelta(seconds=60), u'example.com'),
                     (timedelta(seconds=90), u'example.org')])
-    @given(now=datetimes(min_year=1971, max_year=2030, timezones=[]),
+    @given(now=datetimes(
+               min_value=datetime(1971, 1, 1), max_value=datetime(2030, 1, 1)),
            certs=s.lists(
                s.tuples(
                    s.integers(min_value=0, max_value=1000)
