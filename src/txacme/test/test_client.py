@@ -874,8 +874,8 @@ class ClientTests(TestCase):
                 )))
 
     @example(http.CREATED, http.FOUND)
-    @given(s.sampled_from(http.RESPONSES.keys()),
-           s.sampled_from(http.RESPONSES.keys()))
+    @given(s.sampled_from(sorted(http.RESPONSES)),
+           s.sampled_from(sorted(http.RESPONSES)))
     def test_expect_response_wrong_code(self, expected, actual):
         """
         ``_expect_response`` raises `~acme.errors.ClientError` if the response
