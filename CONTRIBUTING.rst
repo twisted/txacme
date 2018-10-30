@@ -49,3 +49,10 @@ You can check the test coverage, and diff coverage by running the dedicated
 There is a tox environment dedicated to code style checks::
 
     $ tox -e flake8
+
+If executing the `tox` environment is too slow for you, you can always enable
+a specific environment and execute the test with `trial`::
+
+    $ . .tox/py27-twlatest/bin/activate
+    $ pip install -e .
+    $ trial txacme.test.test_service.AcmeIssuingServiceTests.test_timer_errors
