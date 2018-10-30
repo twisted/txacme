@@ -122,6 +122,13 @@ class FakeClient(object):
         self._ca_aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(
             self._ca_key.public_key())
 
+    def stop(self):
+        """
+        Called to stop the client and trigger cleanups.
+        """
+        # Nothing to stop as reactor is not spun.
+        return succeed(None)
+
     def register(self, new_reg=None):
         self._registered = True
         if new_reg is None:

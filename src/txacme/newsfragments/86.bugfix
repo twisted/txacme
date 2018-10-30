@@ -1,0 +1,2 @@
+txacme.service.AcmeIssuingService.stopFactory nows closes the persisted
+HTTP client connections.

@@ -78,6 +78,7 @@ class AcmeIssuingService(Service):
     _waiting = attr.ib(default=attr.Factory(list), init=False)
     _issuing = attr.ib(default=attr.Factory(dict), init=False)
     ready = False
+    _client = None
 
     def _now(self):
         """
@@ -115,7 +116,7 @@ class AcmeIssuingService(Service):
 
             d1 = (
                 gatherResults(
-                    [self._with_client(self._issue_cert, server_name)
+                    [self._issue_cert(server_name)
                      .addErrback(self._panic, server_name)
                      for server_name in panicing],
                     consumeErrors=True)
@@ -169,7 +170,7 @@ class AcmeIssuingService(Service):
             d_issue, waiting = self._issuing[server_name]
             waiting.append(d)
         else:
-            d_issue = self._with_client(self._issue_cert, server_name)
+            d_issue = self._issue_cert(server_name)
             waiting = [d]
             self._issuing[server_name] = (d_issue, waiting)
             # Add the callback afterwards in case we're using a client
@@ -177,13 +178,7 @@ class AcmeIssuingService(Service):
             d_issue.addBoth(finish)
         return d
 
-    def _with_client(self, f, *a, **kw):
-        """
-        Construct a client, and perform an operation with it.
-        """
-        return self._client_creator().addCallback(f, *a, **kw)
-
-    def _issue_cert(self, client, server_name):
+    def _issue_cert(self, server_name):
         """
         Issue a new cert for a particular name.
         """
@@ -200,10 +195,10 @@ class AcmeIssuingService(Service):
         def answer_and_poll(authzr):
             def got_challenge(stop_responding):
                 return (
-                    poll_until_valid(authzr, self._clock, client)
+                    poll_until_valid(authzr, self._clock, self._client)
                     .addBoth(tap(lambda _: stop_responding())))
             return (
-                answer_challenge(authzr, client, self._responders)
+                answer_challenge(authzr, self._client, self._responders)
                 .addCallback(got_challenge))
 
         def got_cert(certr):
@@ -223,13 +218,13 @@ class AcmeIssuingService(Service):
             return objects
 
         return (
-            client.request_challenges(fqdn_identifier(server_name))
+            self._client.request_challenges(fqdn_identifier(server_name))
             .addCallback(answer_and_poll)
-            .addCallback(lambda ign: client.request_issuance(
+            .addCallback(lambda ign: self._client.request_issuance(
                 CertificateRequest(
                     csr=csr_for_names([server_name], key))))
             .addCallback(got_cert)
-            .addCallback(client.fetch_chain)
+            .addCallback(self._client.fetch_chain)
             .addCallback(got_chain)
             .addCallback(partial(self.cert_store.store, server_name)))
 
@@ -240,9 +235,9 @@ class AcmeIssuingService(Service):
         if self._registered:
             return succeed(None)
         else:
-            return self._with_client(self._register)
+            return self._register()
 
-    def _register(self, client):
+    def _register(self):
         """
         Register and agree to the TOS.
         """
@@ -251,8 +246,8 @@ class AcmeIssuingService(Service):
             self._registered = True
         regr = messages.NewRegistration.from_data(email=self._email)
         return (
-            client.register(regr)
-            .addCallback(client.agree_to_tos)
+            self._client.register(regr)
+            .addCallback(self._client.agree_to_tos)
             .addCallback(_registered))
 
     def when_certs_valid(self):
@@ -282,7 +277,13 @@ class AcmeIssuingService(Service):
         self._timer_service = TimerService(
             self.check_interval.total_seconds(), self._check_certs)
         self._timer_service.clock = self._clock
-        self._timer_service.startService()
+
+        def cb_client_started(client):
+            self._client = client
+            self._timer_service.startService()
+
+        deferred = self._client_creator()
+        deferred.addCallback(cb_client_started)
 
     def stopService(self):
         Service.stopService(self)
@@ -291,7 +292,15 @@ class AcmeIssuingService(Service):
         for d in list(self._waiting):
             d.cancel()
         self._waiting = []
-        return self._timer_service.stopService()
+
+        if self._client:
+            deferred = self._client.stop()
+            self._client = None
+        else:
+            deferred = succeed(None)
+
+        deferred.addCallback(lambda _: self._timer_service.stopService())
+        return deferred
 
 
 __all__ = ['AcmeIssuingService']

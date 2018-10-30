@@ -40,7 +40,7 @@ def dns_names():
 
 def urls():
     """
-    Strategy for generating ``twisted.python.url.URL``\s.
+    Strategy for generating ``twisted.python.url.URL``.
     """
     return s.builds(
         URL,
