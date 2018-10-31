@@ -35,10 +35,13 @@ class AcmeIssuingService(Service):
     :param cert_store: The certificate store containing the certificates to
         manage.
 
-    :type client_creator: Callable[[], Deferred[`txacme.client.Client`]]
-    :param client_creator: A callable called with no arguments for creating the
-        ACME client.  For example, ``partial(Client.from_url, reactor=reactor,
+    :type client: `txacme.client.Client`
+    :param client: A client which is already set to be used for an
+        environement.  For example, ``Client.from_url(reactor=reactor,
         url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key, alg=RS256)``.
+        When the service is stopped, it will automatically call the stop
+        method on the client.
+
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
 
@@ -65,7 +68,7 @@ class AcmeIssuingService(Service):
         key generation requirements.
     """
     cert_store = attr.ib()
-    _client_creator = attr.ib()
+    _client = attr.ib()
     _clock = attr.ib()
     _responders = attr.ib()
     _email = attr.ib(default=None)
@@ -78,7 +81,6 @@ class AcmeIssuingService(Service):
     _waiting = attr.ib(default=attr.Factory(list), init=False)
     _issuing = attr.ib(default=attr.Factory(dict), init=False)
     ready = False
-    _client = None
 
     def _now(self):
         """
@@ -277,13 +279,7 @@ class AcmeIssuingService(Service):
         self._timer_service = TimerService(
             self.check_interval.total_seconds(), self._check_certs)
         self._timer_service.clock = self._clock
-
-        def cb_client_started(client):
-            self._client = client
-            self._timer_service.startService()
-
-        deferred = self._client_creator()
-        deferred.addCallback(cb_client_started)
+        self._timer_service.startService()
 
     def stopService(self):
         Service.stopService(self)
@@ -293,12 +289,7 @@ class AcmeIssuingService(Service):
             d.cancel()
         self._waiting = []
 
-        if self._client:
-            deferred = self._client.stop()
-            self._client = None
-        else:
-            deferred = succeed(None)
-
+        deferred = self._client.stop()
         deferred.addCallback(lambda _: self._timer_service.stopService())
         return deferred
 
