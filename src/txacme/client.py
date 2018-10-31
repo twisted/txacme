@@ -76,7 +76,7 @@ def _default_client(jws_client, reactor, key, alg):
     if jws_client is None:
         pool = HTTPConnectionPool(reactor)
         agent = Agent(reactor, pool=pool)
-        jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
+        jws_client = JWSClient(agent, key, alg)
     return jws_client
 
 
@@ -136,6 +136,17 @@ class Client(object):
                     tap(lambda d: action.add_success_fields(directory=d)))
                 .addCallback(cls, reactor, key, jws_client)
                 .addActionFinish())
+
+    def stop(self):
+        """
+        Stops the client operation.
+
+        This cancels pending operations and does cleanup.
+
+        :return: When operation is done.
+        :rtype: Deferred[None]
+        """
+        return self._client.stop()
 
     def register(self, new_reg=None):
         """
@@ -666,9 +677,10 @@ class JWSClient(object):
     """
     timeout = 40
 
-    def __init__(self, treq_client, key, alg,
+    def __init__(self, agent, key, alg,
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
-        self._treq = treq_client
+        self._treq = HTTPClient(agent=agent)
+        self._agent = agent
         self._key = key
         self._alg = alg
         self._user_agent = user_agent
@@ -770,6 +782,17 @@ class JWSClient(object):
                         content_type=r.headers.getRawHeaders(
                             b'content-type', [None])[0])))
                 .addActionFinish())
+
+    def stop(self):
+        """
+        Stops the operation.
+
+        This cancels pending operations and does cleanup.
+
+        :return: When operation is done.
+        :rtype: Deferred[None]
+        """
+        return self._agent._pool.closeCachedConnections()
 
     def head(self, url, *args, **kwargs):
         """
