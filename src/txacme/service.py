@@ -220,18 +220,25 @@ class AcmeIssuingService(Service):
             log.info(
                 'Received certificate for {server_name!r}.',
                 server_name=server_name)
-            return objects
+            self.cert_store.store(server_name, objects)
+
+        names = [n.strip() for n in server_name.split(',')]
+
+        challenges = []
+        for name in names:
+            deferred = self._client.request_challenges(fqdn_identifier(name))
+            deferred.addCallback(answer_and_poll)
+            challenges.append(deferred)
 
         return (
-            client.request_challenges(fqdn_identifier(server_name))
-            .addCallback(answer_and_poll)
-            .addCallback(lambda ign: client.request_issuance(
+            gatherResults(challenges, consumeErrors=True)
+            .addCallback(lambda ign: self._client.request_issuance(
                 CertificateRequest(
-                    csr=csr_for_names([server_name], key))))
+                    csr=csr_for_names(names, key))))
             .addCallback(got_cert)
-            .addCallback(client.fetch_chain)
+            .addCallback(self._client.fetch_chain)
             .addCallback(got_chain)
-            .addCallback(partial(self.cert_store.store, server_name)))
+            )
 
     def _ensure_registered(self):
         """
