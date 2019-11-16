@@ -807,9 +807,9 @@ class JWSClient(object):
             self._current_request.cancel()
             self._current_request = None
 
-        agent_pool = getattr(self._agent, 'pool', None)
+        agent_pool = getattr(self._agent, '_pool', None)
         if agent_pool:
-            return self._agent._pool.closeCachedConnections()
+            return agent_pool.closeCachedConnections()
         return succeed(None)
 
     def head(self, url, *args, **kwargs):

@@ -64,7 +64,7 @@ class EndpointTests(TestCase):
         self.endpoint = AutoTLSEndpoint(
             reactor=clock,
             directory=URL.fromText(u'https://example.com/'),
-            client_creator=lambda reactor, directory: succeed(client),
+            client=client,
             cert_store=MemoryStore(),
             cert_mapping={},
             sub_endpoint=DummyEndpoint())
@@ -78,7 +78,7 @@ class EndpointTests(TestCase):
             AutoTLSEndpoint(
                 reactor=Clock(),
                 directory='/wrong/kind/of/directory',
-                client_creator=None,
+                client=None,
                 cert_store=None,
                 cert_mapping={},
                 sub_endpoint=DummyEndpoint())

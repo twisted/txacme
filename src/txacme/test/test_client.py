@@ -127,14 +127,14 @@ class ClientFixture(Fixture):
         self._alg = alg
 
     def _setUp(self):  # noqa
-        treq_client = HTTPClient(
-            agent=RequestTraversalAgent(
-                StringStubbingResource(self._sequence)),
-            data_to_body_producer=_SynchronousProducer)
+        agent = RequestTraversalAgent(
+            StringStubbingResource(self._sequence))
+        jws_client = JWSClient(agent, self._key, self._alg)
+        jws_client._treq._data_to_body_producer = _SynchronousProducer
         self.clock = Clock()
         self.client = Client(
             self._directory, self.clock, self._key,
-            jws_client=JWSClient(treq_client, self._key, self._alg))
+            jws_client=jws_client)
 
 
 def _nonce_response(url, nonce):
@@ -344,6 +344,7 @@ class ClientTests(TestCase):
             self.assertThat(
                 client.register(reg2),
                 failed_with(IsInstance(errors.UnexpectedUpdate)))
+        succeeded(client.stop())
 
     def test_register(self):
         """
@@ -781,16 +782,15 @@ class ClientTests(TestCase):
                   u'new-authz': u'https://example.org/acme/new-authz',
               })))],
             self.expectThat)
-        treq_client = HTTPClient(
-            agent=RequestTraversalAgent(
-                StringStubbingResource(sequence)),
-            data_to_body_producer=_SynchronousProducer)
+        agent = RequestTraversalAgent(
+            StringStubbingResource(sequence))
+        jws_client = JWSClient(agent, key=RSA_KEY_512, alg=RS256)
+        jws_client._treq._data_to_body_producer = _SynchronousProducer
         with sequence.consume(self.fail):
             d = Client.from_url(
                 reactor, URL.fromText(u'https://example.org/acme/'),
                 key=RSA_KEY_512, alg=RS256,
-                jws_client=JWSClient(
-                    treq_client, key=RSA_KEY_512, alg=RS256))
+                jws_client=jws_client)
             self.assertThat(
                 d,
                 succeeded(
