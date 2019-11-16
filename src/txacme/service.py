@@ -37,7 +37,7 @@ class AcmeIssuingService(Service):
 
     :type client: `txacme.client.Client`
     :param client: A client which is already set to be used for an
-        environement.  For example, ``Client.from_url(reactor=reactor,
+        environment.  For example, ``Client.from_url(reactor=reactor,
         url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key, alg=RS256)``.
         When the service is stopped, it will automatically call the stop
         method on the client.

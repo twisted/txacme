@@ -681,6 +681,7 @@ class JWSClient(object):
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
         self._treq = HTTPClient(agent=agent)
         self._agent = agent
+        self._current_request = None
         self._key = key
         self._alg = alg
         self._user_agent = user_agent
@@ -768,14 +769,23 @@ class JWSClient(object):
 
         :return: Deferred firing with the HTTP response.
         """
+        def cb_request_done(result):
+            """
+            Called when we got a response from the request.
+            """
+            self._current_request = None
+            return result
+
         action = LOG_JWS_REQUEST(url=url)
         with action.context():
             headers = kwargs.setdefault('headers', Headers())
             headers.setRawHeaders(b'user-agent', [self._user_agent])
             kwargs.setdefault('timeout', self.timeout)
+            self._current_request = self._treq.request(
+                method, url, *args, **kwargs)
             return (
-                DeferredContext(
-                    self._treq.request(method, url, *args, **kwargs))
+                DeferredContext(self._current_request)
+                .addCallback(cb_request_done)
                 .addCallback(
                     tap(lambda r: action.add_success_fields(
                         code=r.code,
@@ -792,6 +802,11 @@ class JWSClient(object):
         :return: When operation is done.
         :rtype: Deferred[None]
         """
+        if self._current_request and not self._current_request.called:
+            self._current_request.addErrback(lambda _: None)
+            self._current_request.cancel()
+            self._current_request = None
+
         return self._agent._pool.closeCachedConnections()
 
     def head(self, url, *args, **kwargs):
