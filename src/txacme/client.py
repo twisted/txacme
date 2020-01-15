@@ -110,6 +110,8 @@ class Client(object):
         """
         Construct a client from an ACME directory at a given URL.
 
+        At construct time, it validates that `url` is a valid ACME directory.
+
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
             See `txacme.urls` for constants for various well-known public
             directories.

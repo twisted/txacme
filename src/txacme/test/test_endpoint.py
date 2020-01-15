@@ -29,7 +29,7 @@ from txacme._endpoint_parser import _AcmeParser
 from txacme.endpoint import AutoTLSEndpoint, load_or_create_client_key
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
-from txacme.testing import FakeClient, MemoryStore
+from txacme.testing import FakeClient, MemoryStore, TXACMETestCase
 from txacme.urls import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 
 
@@ -51,7 +51,7 @@ class DummyEndpoint(object):
         return succeed(DummyPort())
 
 
-class EndpointTests(TestCase):
+class EndpointTests(TXACMETestCase):
     """
     Tests for `~txacme.endpoint.AutoTLSEndpoint`.
     """
@@ -106,10 +106,11 @@ class EndpointTests(TestCase):
             MatchesStructure(running=Equals(False)))
 
 
-class PluginTests(TestCase):
+class PluginTests(TXACMETestCase):
     """
     Tests for the plugins.
     """
+
     def test_le_parser(self):
         """
         The ``le:`` parser uses the Let's Encrypt production directory, and
@@ -171,11 +172,14 @@ class PluginTests(TestCase):
                         '%r is not a stream server endpoint'))))
         self.assertThat(key_path.isfile(), Equals(True))
         key_data = key_path.getContent()
+
+        # Multiple instances with certificates from the same local directory,
+        # will serve the same certificates.
         parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
         self.assertThat(key_path.getContent(), Equals(key_data))
 
 
-class LoadClientKeyTests(TestCase):
+class LoadClientKeyTests(TXACMETestCase):
     """
     Tests for `~txacme.endpoint.load_or_create_client_key`.
     """

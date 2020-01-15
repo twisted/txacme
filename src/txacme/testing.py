@@ -11,12 +11,31 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
+from testtools import TestCase
+from twisted.internet import reactor
 from twisted.internet.defer import Deferred, fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
 from txacme.interfaces import ICertificateStore, IResponder
 from txacme.util import clock_now, generate_private_key
+
+class TXACMETestCase(TestCase):
+    """
+    Common code for all tests for the txacme project.
+    """
+
+    def tearDown(self):
+        super(TXACMETestCase, self).tearDown()
+
+        # Make sure the main reactor is clean after each test.
+        junk = []
+        for delayed_call in reactor.getDelayedCalls():
+            delayed_call.cancel()
+            junk.append(delayed_call)
+        if junk:
+            raise AssertionError(
+                'Reactor is not clean. DelayedCalls: %s' % (junk,))
 
 
 @attr.s
