@@ -158,28 +158,32 @@ class Client(object):
         """
         return self._client.stop()
 
-    def register(self, new_reg=None):
+    def register(self, email=None):
         """
-        Create a new registration with the ACME server.
+        Create a new registration with the ACME server or update
+        an existing account.
 
-        :param ~acme.messages.NewRegistration new_reg: The registration message
-            to use, or ``None`` to construct one.
+        :param str: Comma separated contact emails used by the account.
 
         :return: The registration resource.
         :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
-        if new_reg is None:
-            new_reg = messages.NewRegistration()
+        uri = self.directory['newAccount']
+        new_reg = messages.NewRegistration.from_data(
+            email=email,
+            terms_of_service_agreed=True,
+            )
         action = LOG_ACME_REGISTER(registration=new_reg)
         with action.context():
             return (
                 DeferredContext(
-                    self.update_registration(
-                        new_reg, uri=self.directory[new_reg]))
-                .addErrback(self._maybe_registered, new_reg)
+                    self._client.post(uri, new_reg))
+                .addCallback(self._cb_check_existing_account, new_reg)
+                .addCallback(self._cb_check_registration)
                 .addCallback(
                     tap(lambda r: action.add_success_fields(registration=r)))
                 .addActionFinish())
+
 
     @classmethod
     def _maybe_location(cls, response, uri=None):
@@ -191,22 +195,9 @@ class Client(object):
             return location.decode('ascii')
         return uri
 
-    def _maybe_registered(self, failure, new_reg):
+    def agree_to_tos(self, regr, uri):
         """
-        If the registration already exists, we should just load it.
-        """
-        failure.trap(ServerError)
-        response = failure.value.response
-        if response.code == http.CONFLICT:
-            reg = new_reg.update(
-                resource=messages.UpdateRegistration.resource_type)
-            uri = self._maybe_location(response)
-            return self.update_registration(reg, uri=uri)
-        return failure
-
-    def agree_to_tos(self, regr):
-        """
-        Accept the terms-of-service for a registration.
+        Accept the terms-of-service for an already registered account.
 
         :param ~acme.messages.RegistrationResource regr: The registration to
             update.
@@ -217,11 +208,13 @@ class Client(object):
         return self.update_registration(
             regr.update(
                 body=regr.body.update(
-                    agreement=regr.terms_of_service)))
+                    agreement=regr.terms_of_service)),
+            uri,
+            )
 
-    def update_registration(self, regr, uri=None):
+    def update_registration(self, regr, uri):
         """
-        Submit a registration to the server to update it.
+        Update an already account.
 
         :param ~acme.messages.RegistrationResource regr: The registration to
             update.  Can be a :class:`~acme.messages.NewRegistration` instead,
@@ -232,58 +225,60 @@ class Client(object):
         :return: The updated registration resource.
         :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
-        if uri is None:
-            uri = regr.uri
-        if isinstance(regr, messages.RegistrationResource):
-            message = messages.UpdateRegistration(**dict(regr.body))
-        else:
-            message = regr
-        action = LOG_ACME_UPDATE_REGISTRATION(uri=uri, registration=message)
+        action = LOG_ACME_UPDATE_REGISTRATION(uri=uri, registration=regr)
         with action.context():
             return (
-                DeferredContext(self._client.post(uri, message))
-                .addCallback(self._parse_regr_response, uri=uri)
-                .addCallback(self._check_regr, regr)
+                DeferredContext(self._client.post(uri, regr))
+                .addCallback(
+                    self._cb_parse_registration_response, regr, uri=uri)
+                .addCallback(self._cb_check_registration)
                 .addCallback(
                     tap(lambda r: action.add_success_fields(registration=r)))
                 .addActionFinish())
 
-    def _parse_regr_response(self, response, uri=None, new_authzr_uri=None,
-                             terms_of_service=None):
+    def _cb_check_existing_account(self, response, request):
         """
-        Parse a registration response from the server.
+        Get the response from the account registration and see if the
+        account is already registered and do an update in that case.
+        """
+        if response.code == 200:
+            uri = self._maybe_location(response)
+            deferred = self._client.post(uri, request, kid=uri)
+            deferred.addCallback(self._cb_parse_registration_response, uri=uri)
+            return deferred
+
+        return self._cb_parse_registration_response(response)
+
+    def _cb_parse_registration_response(self, response, uri=None):
+        """
+        Parse a new or update registration response from the server.
         """
         links = _parse_header_links(response)
+        terms_of_service = None
         if u'terms-of-service' in links:
             terms_of_service = links[u'terms-of-service'][u'url']
-        if u'next' in links:
-            new_authzr_uri = links[u'next'][u'url']
-        if new_authzr_uri is None:
-            raise errors.ClientError('"next" link missing')
         return (
             response.json()
             .addCallback(
                 lambda body:
                 messages.RegistrationResource(
                     body=messages.Registration.from_json(body),
-                    uri=self._maybe_location(response, uri=uri),
-                    new_authzr_uri=new_authzr_uri,
+                    uri=self._maybe_location(response, uri),
                     terms_of_service=terms_of_service))
             )
 
-    def _check_regr(self, regr, new_reg):
+    def _cb_check_registration(self, regr):
         """
         Check that a registration response contains the registration we were
         expecting.
         """
-        body = getattr(new_reg, 'body', new_reg)
-        for k, v in body.items():
-            if k == 'resource' or not v:
-                continue
-            if regr.body[k] != v:
-                raise errors.UnexpectedUpdate(regr)
         if regr.body.key != self.key.public_key():
+            # This is a response for another key.
             raise errors.UnexpectedUpdate(regr)
+
+        if regr.body.status != 'valid':
+            raise errors.UnexpectedUpdate(regr)
+
         return regr
 
     def request_challenges(self, identifier):
@@ -631,6 +626,7 @@ def poll_until_valid(authzr, clock, client, timeout=300.0):
 
 
 JSON_CONTENT_TYPE = b'application/json'
+JOSE_CONTENT_TYPE = b'application/jose+json'
 JSON_ERROR_CONTENT_TYPE = b'application/problem+json'
 DER_CONTENT_TYPE = b'application/pkix-cert'
 REPLAY_NONCE_HEADER = b'Replay-Nonce'
@@ -698,26 +694,32 @@ class JWSClient(object):
 
         self._nonces = set()
 
-    def _wrap_in_jws(self, nonce, obj):
+    def _cb_wrap_in_jws(self, nonce, obj, url, kid=None):
         """
-        Wrap ``JSONDeSerializable`` object in JWS.
-
-        ..  todo:: Implement ``acmePath``.
+        Callebacak to wrap ``JSONDeSerializable`` object in ACME JWS.
 
         :param ~josepy.interfaces.JSONDeSerializable obj:
         :param bytes nonce:
+        :param bytes url: URL to the request for which we wrap the payload.
 
         :rtype: `bytes`
         :return: JSON-encoded data
         """
         with LOG_JWS_SIGN(key_type=self._key.typ, alg=self._alg.name,
-                          nonce=nonce):
+                          nonce=nonce, kid=kid):
             jobj = obj.json_dumps().encode()
-            return (
+            result = (
                 JWS.sign(
-                    payload=jobj, key=self._key, alg=self._alg, nonce=nonce)
+                    payload=jobj,
+                    key=self._key,
+                    alg=self._alg,
+                    nonce=nonce,
+                    url=url,
+                    kid=kid,
+                    )
                 .json_dumps()
                 .encode())
+            return result
 
     @classmethod
     def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):
@@ -898,7 +900,7 @@ class JWSClient(object):
                         lambda nonce: action.add_success_fields(nonce=nonce)))
                     .addActionFinish())
 
-    def _post(self, url, obj, content_type, **kwargs):
+    def _post(self, url, obj, content_type, response_type=JSON_CONTENT_TYPE, kid=None, **kwargs):
         """
         POST an object and check the response.
 
@@ -913,18 +915,18 @@ class JWSClient(object):
         """
         with LOG_JWS_POST().context():
             headers = kwargs.setdefault('headers', Headers())
-            headers.setRawHeaders(b'content-type', [JSON_CONTENT_TYPE])
+            headers.setRawHeaders(b'content-type', [JOSE_CONTENT_TYPE])
             return (
                 DeferredContext(self._get_nonce(url))
-                .addCallback(self._wrap_in_jws, obj)
+                .addCallback(self._cb_wrap_in_jws, obj, url, kid)
                 .addCallback(
                     lambda data: self._send_request(
                         u'POST', url, data=data, **kwargs))
                 .addCallback(self._add_nonce)
-                .addCallback(self._check_response, content_type=content_type)
+                .addCallback(self._check_response, content_type=response_type)
                 .addActionFinish())
 
-    def post(self, url, obj, content_type=JSON_CONTENT_TYPE, **kwargs):
+    def post(self, url, obj, content_type=JOSE_CONTENT_TYPE, **kwargs):
         """
         POST an object and check the response. Retry once if a badNonce error
         is received.
