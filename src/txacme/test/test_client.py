@@ -939,7 +939,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'http-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1201,7 +1200,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'tls-sni-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
