@@ -152,7 +152,8 @@ class PluginTests(TestCase):
         key_path = temp_path.child('client.key')
         reactor = object()
         self.assertThat(
-            parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
+            parser.parseStreamServer(
+                reactor, tempdir, 'tcp', '443', timeout=0),
             MatchesAll(
                 IsInstance(AutoTLSEndpoint),
                 MatchesStructure(
