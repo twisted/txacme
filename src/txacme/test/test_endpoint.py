@@ -174,7 +174,6 @@ class PluginTests(TXACMETestCase):
         self.assertThat(key_path.isfile(), Equals(True))
         key_data = key_path.getContent()
 
-        return
         # Multiple instances with certificates from the same local directory,
         # will serve the same certificates.
         parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
