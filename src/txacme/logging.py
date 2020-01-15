@@ -13,7 +13,7 @@ NONCE = Field(
 
 LOG_JWS_SIGN = ActionType(
     u'txacme:jws:sign',
-    fields(NONCE, key_type=unicode, alg=unicode),
+    fields(NONCE, key_type=unicode, alg=unicode, kid=unicode),
     fields(),
     u'Signing a message with JWS')
 

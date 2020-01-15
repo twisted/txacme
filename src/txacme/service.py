@@ -244,11 +244,10 @@ class AcmeIssuingService(Service):
         Register and agree to the TOS.
         """
         def _registered(regr):
-            self._regr = regr
             self._registered = True
-        regr = messages.NewRegistration.from_data(email=self._email)
+
         return (
-            self._client.register(regr)
+            self._client.register(email=self._email)
             .addCallback(self._client.agree_to_tos)
             .addCallback(_registered))
 
