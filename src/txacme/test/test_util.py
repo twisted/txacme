@@ -76,7 +76,7 @@ class GenerateCertTests(TestCase):
     def test_cert_verifies(self, token):
         """
         The certificates generated verify using
-        `~acme.challenges.TLSSNI01Response.verify_cert`.
+        ``acme.challenges.TLSSNI01Response.verify_cert``.
         """
         ckey = RSA_KEY_512_RAW
         challenge = challenges.TLSSNI01(token=token)

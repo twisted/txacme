@@ -1172,9 +1172,6 @@ class ClientTests(TestCase):
         recorded_challenges = set()
         responder = RecordingResponder(recorded_challenges, u'tls-sni-01')
         uri = u'https://example.org/acme/authz/1/1'
-        key_authorization = (
-            u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
-            u'QF6lXqTKx4OOF7ECC4Jf1F080BGhHQbe0')
         challb = messages.ChallengeBody.from_json({
             u'uri': uri,
             u'token': u'IlirfxKKXAsHtmzK29Pj8A',
