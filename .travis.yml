@@ -9,8 +9,6 @@ matrix:
   include:
   - python: 2.7
     env: TOXENV=py27-twlatest-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twlatest-alldeps
   - python: 3.5
     env: TOXENV=py35-twlatest-alldeps
   - python: 3.6
@@ -25,8 +23,6 @@ matrix:
     env: TOXENV=pypy3-twlatest-alldeps PYENV_VERSION=pypy3.5-6.0.0
   - python: 2.7
     env: TOXENV=py27-twtrunk-acmaster-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twtrunk-acmaster-alldeps
   - python: 3.5
     env: TOXENV=py35-twtrunk-acmaster-alldeps
   - python: 3.6
@@ -41,8 +37,6 @@ matrix:
     env: TOXENV=pypy3-twtrunk-acmaster-alldeps PYENV_VERSION=pypy3.5-6.0.0
   - python: 2.7
     env: TOXENV=py27-twlowest-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twlowest-alldeps
   - python: 3.5
     env: TOXENV=py35-twlowest-alldeps
   - python: 3.6
@@ -67,7 +61,6 @@ matrix:
     env: TOXENV=flake8
   allow_failures:
   - env: TOXENV=py27-twtrunk-acmaster-alldeps
-  - env: TOXENV=py34-twtrunk-acmaster-alldeps
   - env: TOXENV=py35-twtrunk-acmaster-alldeps
   - env: TOXENV=py36-twtrunk-acmaster-alldeps
   - env: TOXENV=py37-twtrunk-acmaster-alldeps
