@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from hypothesis import strategies as s
-from hypothesis import assume, example, given
+from hypothesis import assume, example, given, settings
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
@@ -1461,6 +1461,7 @@ class ClientTests(TestCase):
             in cert_urls
             ], self.expectThat)
 
+    @settings(deadline=None)
     @example([u'http://example.com/1', u'http://example.com/2'])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
@@ -1486,6 +1487,7 @@ class ClientTests(TestCase):
                             cert_chain_uri=Equals(issuer_url))
                         for url, issuer_url in urls])))
 
+    @settings(deadline=None)
     @example([u'http://example.com/{}'.format(n) for n in range(20)])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
