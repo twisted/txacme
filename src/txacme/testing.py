@@ -20,6 +20,7 @@ from zope.interface import implementer
 from txacme.interfaces import ICertificateStore, IResponder
 from txacme.util import clock_now, generate_private_key
 
+
 class TXACMETestCase(TestCase):
     """
     Common code for all tests for the txacme project.

@@ -19,7 +19,7 @@ from txsni.snimap import HostDirectoryMap, SNIMap
 from zope.interface import implementer
 
 from txacme.challenges import TLSSNI01Responder
-from txacme.client import Client
+from txacme.client import Client, _DEFAULT_TIMEOUT
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.store import DirectoryStore
 from txacme.util import check_directory_url_type, generate_private_key
@@ -164,13 +164,21 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     """
     def colon_join(items):
         return ':'.join([item.replace(':', '\\:') for item in items])
+
+    timeout = _DEFAULT_TIMEOUT
+    if 'timeout' in kwargs.keys():
+        timeout = kwargs['timeout']
+        del kwargs['timeout']
+
     sub = colon_join(list(args) + ['='.join(item) for item in kwargs.items()])
+
     pem_path = FilePath(pemdir).asTextMode()
     acme_key = load_or_create_client_key(pem_path)
     return AutoTLSEndpoint(
         reactor=reactor,
         directory=directory,
-        client=Client.from_url(reactor, directory, key=acme_key, alg=RS256),
+        client=Client.from_url(
+            reactor, directory, key=acme_key, alg=RS256, timeout=timeout),
         cert_store=DirectoryStore(pem_path),
         cert_mapping=HostDirectoryMap(pem_path),
         sub_endpoint=serverFromString(reactor, sub))

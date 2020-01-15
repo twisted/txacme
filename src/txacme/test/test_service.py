@@ -19,7 +19,7 @@ from testtools.matchers import (
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
     has_no_result, succeeded)
-from twisted.internet.defer import CancelledError, Deferred, fail, succeed
+from twisted.internet.defer import CancelledError, Deferred, fail
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 

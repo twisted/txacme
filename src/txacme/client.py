@@ -32,6 +32,9 @@ from txacme.logging import (
 from txacme.util import check_directory_url_type, tap
 
 
+_DEFAULT_TIMEOUT = 40
+
+
 # Borrowed from requests, with modifications.
 
 def _parse_header_links(response):
@@ -106,7 +109,10 @@ class Client(object):
         self.key = key
 
     @classmethod
-    def from_url(cls, reactor, url, key, alg=RS256, jws_client=None):
+    def from_url(
+        cls, reactor, url, key, alg=RS256,
+        jws_client=None, timeout=_DEFAULT_TIMEOUT,
+            ):
         """
         Construct a client from an ACME directory at a given URL.
 
@@ -121,6 +127,8 @@ class Client(object):
             the type of key used.
         :param JWSClient jws_client: The underlying client to use, or ``None``
             to construct one.
+        :param int timeout: Number of seconds to wait for an HTTP response
+            during ACME server interaction.
 
         :return: The constructed client.
         :rtype: Deferred[`Client`]
@@ -130,6 +138,7 @@ class Client(object):
         with action.context():
             check_directory_url_type(url)
             jws_client = _default_client(jws_client, reactor, key, alg)
+            jws_client.timeout = timeout
             return (
                 DeferredContext(jws_client.get(url.asText()))
                 .addCallback(json_content)
@@ -677,7 +686,7 @@ class JWSClient(object):
     """
     HTTP client using JWS-signed messages.
     """
-    timeout = 40
+    timeout = _DEFAULT_TIMEOUT
 
     def __init__(self, agent, key, alg,
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
