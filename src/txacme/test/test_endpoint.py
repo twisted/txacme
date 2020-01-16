@@ -176,7 +176,7 @@ class PluginTests(TXACMETestCase):
 
         # Multiple instances with certificates from the same local directory,
         # will serve the same certificates.
-        parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
+        parser.parseStreamServer(reactor, tempdir, 'tcp', '443', timeout=0)
         self.assertThat(key_path.getContent(), Equals(key_data))
 
 
