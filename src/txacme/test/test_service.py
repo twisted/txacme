@@ -166,6 +166,7 @@ def panicing_certs_fixture(draw):
             s.lists(
                 panicing_cert(now, panic),
                 min_size=1,
+                max_size=5,
                 unique_by=lambda i: i[0])))
     return AcmeFixture(now=now, panic_interval=panic, certs=certs)
 

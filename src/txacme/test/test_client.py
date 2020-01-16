@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from hypothesis import strategies as s
-from hypothesis import assume, example, given
+from hypothesis import assume, example, given, settings
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
@@ -939,7 +939,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'http-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1173,9 +1172,6 @@ class ClientTests(TestCase):
         recorded_challenges = set()
         responder = RecordingResponder(recorded_challenges, u'tls-sni-01')
         uri = u'https://example.org/acme/authz/1/1'
-        key_authorization = (
-            u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
-            u'QF6lXqTKx4OOF7ECC4Jf1F080BGhHQbe0')
         challb = messages.ChallengeBody.from_json({
             u'uri': uri,
             u'token': u'IlirfxKKXAsHtmzK29Pj8A',
@@ -1201,7 +1197,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'tls-sni-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1463,6 +1458,7 @@ class ClientTests(TestCase):
             in cert_urls
             ], self.expectThat)
 
+    @settings(deadline=None)
     @example([u'http://example.com/1', u'http://example.com/2'])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
@@ -1488,6 +1484,7 @@ class ClientTests(TestCase):
                             cert_chain_uri=Equals(issuer_url))
                         for url, issuer_url in urls])))
 
+    @settings(deadline=None)
     @example([u'http://example.com/{}'.format(n) for n in range(20)])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
