@@ -165,11 +165,7 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     def colon_join(items):
         return ':'.join([item.replace(':', '\\:') for item in items])
 
-    timeout = _DEFAULT_TIMEOUT
-    if 'timeout' in kwargs.keys():
-        timeout = kwargs['timeout']
-        del kwargs['timeout']
-
+    timeout = kwargs.pop('timeout', _DEFAULT_TIMEOUT)
     sub = colon_join(list(args) + ['='.join(item) for item in kwargs.items()])
 
     pem_path = FilePath(pemdir).asTextMode()
