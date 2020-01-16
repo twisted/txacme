@@ -6,6 +6,8 @@ Each time it starts, it will generate a new private key and register a new
 account if one is not defined.
 """
 from __future__ import unicode_literals, print_function
+from subprocess import Popen, PIPE
+import os
 import sys
 
 from cryptography.hazmat.backends import default_backend
@@ -16,12 +18,23 @@ from eliottree._cli import parse_messages, render_tasks
 from josepy.jwa import RS256
 from josepy.jwk import JWKRSA
 from twisted.internet import reactor, defer
+from twisted.internet.endpoints import TCP4ServerEndpoint
+from twisted.web import http
+from twisted.web.resource import Resource
+from twisted.web.server import Site
 from twisted.python.url import URL
+from zope.interface import implementer
 
 from txacme.client import Client
+from txacme.interfaces import ICertificateStore, IResponder
 
+
+# Update it to the path of your pebble executable.
+# Download it from https://github.com/letsencrypt/pebble/releases
+PEBBLE_PATH="/tmp/pebble_linux-amd64"
 
 # Copy inside an exiting private key and check that account is reused.
+# Or leave it emtpy to have the key automatically generated.
 ACCOUNT_KEY_PEM = """
 -----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAqJc17HS3PftQZzharEnOpdW1eCxJvqHuiciolx6qtu1X3YIa
@@ -79,8 +92,164 @@ def _get_key():
     return key
 
 
+class StaticTextResource(Resource, object):
+    """
+    A resource returning a static page... is a placeholder page.
+    """
+    def __init__(self, content='', content_type='text/plain', code=http.OK):
+        self._content = content.encode('utf-8')
+        self._content_type = content_type.encode('ascii')
+        self._code = code
+        super(StaticTextResource, self).__init__()
+
+    def getChild(self, name, request):
+        """
+        Called when no other resources are attached.
+        """
+        return self
+
+    def render(self, request):
+        """
+        Return the same content.
+        """
+        request.setHeader(b'Content-Type', self._content_type)
+        request.setResponseCode(self._code)
+        return self._content
+
+
+@implementer(IResponder)
+class HTTP01Responder(StaticTextResource):
+    """
+    Web resource for ``http-01`` challenge responder.
+
+    Beside the challenge pages, it displays empty pages.
+    """
+    challenge_type = u'http-01'
+
+    def __init__(self):
+        super(HTTP01Responder, self).__init__('')
+        # Add a static response to help with connection troubleshooting.
+        self.putChild(b'test.txt', StaticTextResource('Let\'s Encrypt Ready'))
+
+    def start_responding(self, server_name, challenge, response):
+        """
+        Prepare for the ACME server to validate the challenge.
+        """
+        self.putChild(
+            challenge.encode('token').encode('utf-8'),
+            StaticTextResource(response.key_authorization),
+            )
+
+    def stop_responding(self, server_name, challenge, response):
+        """
+        Remove the child resource once the process is done.
+        """
+        encoded_token = challenge.encode('token').encode('utf-8')
+        if self.getStaticEntity(encoded_token) is not None:
+            self.delEntity(encoded_token)
+
+
+def start_http01_server():
+    """
+    Start an HTTP server which handles HTTP-01 changeless.
+    """
+    root = StaticTextResource(
+        'Just a test server. Main thing in: '
+        '.well-known/acme-challenge/test.txt'
+        )
+    well_known = StaticTextResource('')
+    root.putChild('.well-known', well_known)
+    well_known.putChild('acme-challenge', HTTP01Responder())
+
+    endpoint = TCP4ServerEndpoint(
+        reactor=reactor,
+        interface='0.0.0.0',
+        port=5002,
+        )
+    return endpoint.listen(Site(root))
+
+
+def start_acme_server():
+    """
+    Start a local pebble ACME v2 server.
+    """
+    # Pebble testing files from
+    # https://github.com/letsencrypt/pebble/tree/master/test/certs/localhost
+    key = """
+-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAmxTFtw113RK70H9pQmdKs9AxhFmnQ6BdDtp3jOZlWlUO0Blt
+MXOUML5905etgtCbcC6RdKRtgSAiDfgx3VWiFMJH++4gUtnaB9SN8GhNSPBpFfSa
+2JhWPo9HQNUsAZqlGTV4SzcGRqtWvdZxUiOfQ2TcvyXIqsaD19ivvqI1NhT6bl3t
+redTZlzLLM6Wvkw6hfyHrJAPQP8LOlCIeDM4YIce6Gstv6qo9iCD4wJiY4u95HVL
+7RK8t8JpZAb7VR+dPhbHEvVpjwuYd5Q05OZ280gFyrhbrKLbqst104GOQT4kQMJG
+WxGONyTX6np0Dx6O5jU7dvYvjVVawbJwGuaL6wIDAQABAoIBAGW9W/S6lO+DIcoo
+PHL+9sg+tq2gb5ZzN3nOI45BfI6lrMEjXTqLG9ZasovFP2TJ3J/dPTnrwZdr8Et/
+357YViwORVFnKLeSCnMGpFPq6YEHj7mCrq+YSURjlRhYgbVPsi52oMOfhrOIJrEG
+ZXPAwPRi0Ftqu1omQEqz8qA7JHOkjB2p0i2Xc/uOSJccCmUDMlksRYz8zFe8wHuD
+XvUL2k23n2pBZ6wiez6Xjr0wUQ4ESI02x7PmYgA3aqF2Q6ECDwHhjVeQmAuypMF6
+IaTjIJkWdZCW96pPaK1t+5nTNZ+Mg7tpJ/PRE4BkJvqcfHEOOl6wAE8gSk5uVApY
+ZRKGmGkCgYEAzF9iRXYo7A/UphL11bR0gqxB6qnQl54iLhqS/E6CVNcmwJ2d9pF8
+5HTfSo1/lOXT3hGV8gizN2S5RmWBrc9HBZ+dNrVo7FYeeBiHu+opbX1X/C1HC0m1
+wJNsyoXeqD1OFc1WbDpHz5iv4IOXzYdOdKiYEcTv5JkqE7jomqBLQk8CgYEAwkG/
+rnwr4ThUo/DG5oH+l0LVnHkrJY+BUSI33g3eQ3eM0MSbfJXGT7snh5puJW0oXP7Z
+Gw88nK3Vnz2nTPesiwtO2OkUVgrIgWryIvKHaqrYnapZHuM+io30jbZOVaVTMR9c
+X/7/d5/evwXuP7p2DIdZKQKKFgROm1XnhNqVgaUCgYBD/ogHbCR5RVsOVciMbRlG
+UGEt3YmUp/vfMuAsKUKbT2mJM+dWHVlb+LZBa4pC06QFgfxNJi/aAhzSGvtmBEww
+xsXbaceauZwxgJfIIUPfNZCMSdQVIVTi2Smcx6UofBz6i/Jw14MEwlvhamaa7qVf
+kqflYYwelga1wRNCPopLaQKBgQCWsZqZKQqBNMm0Q9yIhN+TR+2d7QFjqeePoRPl
+1qxNejhq25ojE607vNv1ff9kWUGuoqSZMUC76r6FQba/JoNbefI4otd7x/GzM9uS
+8MHMJazU4okwROkHYwgLxxkNp6rZuJJYheB4VDTfyyH/ng5lubmY7rdgTQcNyZ5I
+majRYQKBgAMKJ3RlII0qvAfNFZr4Y2bNIq+60Z+Qu2W5xokIHCFNly3W1XDDKGFe
+CCPHSvQljinke3P9gPt2HVdXxcnku9VkTti+JygxuLkVg7E0/SWwrWfGsaMJs+84
+fK+mTZay2d3v24r9WKEKwLykngYPyZw5+BdWU0E+xx5lGUd3U4gG
+-----END RSA PRIVATE KEY-----
+"""
+    cert = """
+-----BEGIN CERTIFICATE-----
+MIIDGzCCAgOgAwIBAgIIbEfayDFsBtwwDQYJKoZIhvcNAQELBQAwIDEeMBwGA1UE
+AxMVbWluaWNhIHJvb3QgY2EgMjRlMmRiMCAXDTE3MTIwNjE5NDIxMFoYDzIxMDcx
+MjA2MTk0MjEwWjAUMRIwEAYDVQQDEwlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEB
+AQUAA4IBDwAwggEKAoIBAQCbFMW3DXXdErvQf2lCZ0qz0DGEWadDoF0O2neM5mVa
+VQ7QGW0xc5Qwvn3Tl62C0JtwLpF0pG2BICIN+DHdVaIUwkf77iBS2doH1I3waE1I
+8GkV9JrYmFY+j0dA1SwBmqUZNXhLNwZGq1a91nFSI59DZNy/JciqxoPX2K++ojU2
+FPpuXe2t51NmXMsszpa+TDqF/IeskA9A/ws6UIh4Mzhghx7oay2/qqj2IIPjAmJj
+i73kdUvtEry3wmlkBvtVH50+FscS9WmPC5h3lDTk5nbzSAXKuFusotuqy3XTgY5B
+PiRAwkZbEY43JNfqenQPHo7mNTt29i+NVVrBsnAa5ovrAgMBAAGjYzBhMA4GA1Ud
+DwEB/wQEAwIFoDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDAYDVR0T
+AQH/BAIwADAiBgNVHREEGzAZgglsb2NhbGhvc3SCBnBlYmJsZYcEfwAAATANBgkq
+hkiG9w0BAQsFAAOCAQEAYIkXff8H28KS0KyLHtbbSOGU4sujHHVwiVXSATACsNAE
+D0Qa8hdtTQ6AUqA6/n8/u1tk0O4rPE/cTpsM3IJFX9S3rZMRsguBP7BSr1Lq/XAB
+7JP/CNHt+Z9aKCKcg11wIX9/B9F7pyKM3TdKgOpqXGV6TMuLjg5PlYWI/07lVGFW
+/mSJDRs8bSCFmbRtEqc4lpwlrpz+kTTnX6G7JDLfLWYw/xXVqwFfdengcDTHCc8K
+wtgGq/Gu6vcoBxIO3jaca+OIkMfxxXmGrcNdseuUCa3RMZ8Qy03DqGu6Y6XQyK4B
+W8zIG6H9SVKkAznM2yfYhW8v2ktcaZ95/OBHY97ZIw==
+-----END CERTIFICATE-----
+"""
+    try:
+        os.makedirs('.tox/pebble/certs/localhost')
+    except OSError:
+        pass
+
+    with open('.tox/pebble/certs/localhost/key.pem', 'w') as stream:
+        stream.write(key)
+    with open('.tox/pebble/certs/localhost/cert.pem', 'w') as stream:
+        stream.write(cert)
+    return Popen(
+        [PEBBLE_PATH, '--config', 'docs/pebble-config.json'] , stdout=PIPE)
+
+
 @defer.inlineCallbacks
-def work():
+def start_responder():
+
+    yield start_http01_server()
+    print(
+        'HTTP-01 responser available on '
+        'http://localhost:5002/.well-known/acme-challenge/test.txt'
+        )
+
+@defer.inlineCallbacks
+def start_client():
+
     # We first validate the directory.
     key = _get_key()
     client = yield Client.from_url(
@@ -107,8 +276,10 @@ def stop():
     """
     """
     reactor.stop()
+    acme_server.kill()
     _, tasks = parse_messages([open(LOG_PATH, 'r')])
     render_tasks(sys.stdout.write, tasks)
+
 
 
 if len(sys.argv) < 3:
@@ -119,11 +290,18 @@ if len(sys.argv) < 3:
     sys.exit(1)
 
 acme_url = sys.argv[1]
-
-to_file(open(LOG_PATH, 'w'))
+print ("Using ACME at %s" % (acme_url,))
+#to_file(open(LOG_PATH, 'w'))
 #to_file(sys.stdout)
 
-d = work()
+
+acme_server = start_acme_server()
+print('Pebble server available at https://localhost:14000/dir')
+
+start_responder()
+
+d = start_client()
 d.addErrback(lambda failure: print(failure))
 d.addBoth(lambda _: stop())
+
 reactor.run()
