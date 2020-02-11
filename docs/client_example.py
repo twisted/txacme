@@ -1,23 +1,33 @@
 """
-This tried to be a complex example demonstrating all the txacme client
+This wants to be a complex example demonstrating all the txacme client
 capabilities.
 
-Each time it starts, it will generate a new private key and register a new
-account if one is not defined.
+Each time it starts, if one is not defined, it will generate a new
+private key and register a new account.
+
+It can also start a pebble ACME server and run tests against it... or you can
+use your one ACME server.
+
+It uses `.tox` as the build directory.
+
+https://www.rfc-editor.org/rfc/rfc8555.html
 """
 from __future__ import unicode_literals, print_function
 from subprocess import Popen, PIPE
+from threading import Thread
 import os
+import socket
 import sys
+import time
 
+from acme.errors import ClientError
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from eliot import to_file
-from eliottree._cli import parse_messages, render_tasks
 from josepy.jwa import RS256
 from josepy.jwk import JWKRSA
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, ssl, task
 from twisted.internet.endpoints import TCP4ServerEndpoint
 from twisted.web import http
 from twisted.web.resource import Resource
@@ -25,16 +35,27 @@ from twisted.web.server import Site
 from twisted.python.url import URL
 from zope.interface import implementer
 
-from txacme.client import Client
-from txacme.interfaces import ICertificateStore, IResponder
+from txacme.client import (
+    answer_challenge,
+    Client,
+    get_certificate,
+    )
+from txacme.interfaces import IResponder
+from txacme.util import generate_private_key
 
+# WARNING. THIS DISABLES SSL validation in twisted client.
+# Is here to make the example easier to read.
+import twisted.internet._sslverify as v
+v.platformTrust = lambda : None
 
 # Update it to the path of your pebble executable.
 # Download it from https://github.com/letsencrypt/pebble/releases
-PEBBLE_PATH="/tmp/pebble_linux-amd64"
+# This script can automatically start a pebble instance, but in that case
+# already registered accounts are not persisted.
+PEBBLE="/tmp/pebble_linux-amd64 --config docs/pebble-config.json"
 
 # Copy inside an exiting private key and check that account is reused.
-# Or leave it emtpy to have the key automatically generated.
+# Or leave it empty to have the key automatically generated.
 ACCOUNT_KEY_PEM = """
 -----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAqJc17HS3PftQZzharEnOpdW1eCxJvqHuiciolx6qtu1X3YIa
@@ -64,10 +85,11 @@ aLhPkFOG4jTZGg3TwV5XNk+f/nh4Ps+GKYng6MneKzN9+mcZ30T54e+1gd+chz9X
 yLwHm1esy/txlB27jQ26/8LabbLRQkFCiXxdJ9W1+TEWoq0YT25Awek=
 -----END RSA PRIVATE KEY-----
 """.strip()
+# Uncomment this to have a new account key generated at each run.
+# ACCOUNT_KEY_PEM = ''
 
-LOG_PATH = 'eliot-log.json'
 
-def _get_key():
+def _get_account_key():
     """
     Return the private key to be used for ACME interaction.
     """
@@ -78,11 +100,7 @@ def _get_key():
             backend=default_backend(),
             )
     # We don't have a key...so generate one.
-    key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend(),
-        )
+    key = generate_private_key('rsa')
     account_key = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -131,7 +149,7 @@ class HTTP01Responder(StaticTextResource):
         # Add a static response to help with connection troubleshooting.
         self.putChild(b'test.txt', StaticTextResource('Let\'s Encrypt Ready'))
 
-    def start_responding(self, server_name, challenge, response):
+    def start_responding(self, challenge, response):
         """
         Prepare for the ACME server to validate the challenge.
         """
@@ -140,7 +158,7 @@ class HTTP01Responder(StaticTextResource):
             StaticTextResource(response.key_authorization),
             )
 
-    def stop_responding(self, server_name, challenge, response):
+    def stop_responding(self, challenge):
         """
         Remove the child resource once the process is done.
         """
@@ -149,24 +167,40 @@ class HTTP01Responder(StaticTextResource):
             self.delEntity(encoded_token)
 
 
-def start_http01_server():
+def start_http01_server(port=5002):
     """
     Start an HTTP server which handles HTTP-01 changeless.
     """
+    responder = HTTP01Responder()
     root = StaticTextResource(
         'Just a test server. Main thing in: '
         '.well-known/acme-challenge/test.txt'
         )
     well_known = StaticTextResource('')
     root.putChild('.well-known', well_known)
-    well_known.putChild('acme-challenge', HTTP01Responder())
+    well_known.putChild('acme-challenge', responder)
 
     endpoint = TCP4ServerEndpoint(
         reactor=reactor,
         interface='0.0.0.0',
-        port=5002,
+        port=port,
         )
-    return endpoint.listen(Site(root))
+    deferred = endpoint.listen(Site(root))
+    deferred.addCallback(lambda result: (result, responder))
+    return deferred
+
+
+def start_https_demo_server(key, certificate_chain, port=5003):
+    """
+    Start a demo HTTPS server which uses the generate certificate.
+    """
+    wait = 60
+    root = StaticTextResource('Hello ACME!')
+    certificate = ssl.PrivateCertificate.loadPEM(key + certificate_chain)
+    reactor.listenSSL(port, Site(root), certificate.options())
+    print('New HTTPS server listening on port %s for the next %s seconds' % (
+        port, wait))
+    return task.deferLater(reactor, wait, lambda: None)
 
 
 def start_acme_server():
@@ -234,74 +268,149 @@ W8zIG6H9SVKkAznM2yfYhW8v2ktcaZ95/OBHY97ZIw==
         stream.write(key)
     with open('.tox/pebble/certs/localhost/cert.pem', 'w') as stream:
         stream.write(cert)
-    return Popen(
-        [PEBBLE_PATH, '--config', 'docs/pebble-config.json'] , stdout=PIPE)
+
+    thread = Thread(target=lambda: os.system(PEBBLE))
+    thread.start()
+
+    # Wait for pebble to start.
+    wait = 0.5
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    for _ in range(5):
+        try:
+            s.connect(('127.0.0.1', 14000))
+        except Exception as error:
+            time.sleep(wait)
+            wait += wait
+        else:
+            s.close()
+            return thread
+
+    raise error
 
 
 @defer.inlineCallbacks
-def start_responder():
+def start_responders():
+    port, http01_responder = yield start_http01_server()
+    defer.returnValue([http01_responder])
 
-    yield start_http01_server()
-    print(
-        'HTTP-01 responser available on '
-        'http://localhost:5002/.well-known/acme-challenge/test.txt'
-        )
 
 @defer.inlineCallbacks
-def start_client():
+def get_things_done():
+    """
+    Here is where the client part is setup and action is done.
+    """
+    responders = yield start_responders()
 
     # We first validate the directory.
-    key = _get_key()
+    account_key = _get_account_key()
     client = yield Client.from_url(
         reactor,
         URL.fromText(acme_url.decode('utf-8')),
-        key=JWKRSA(key=key),
+        key=JWKRSA(key=account_key),
         alg=RS256,
         )
 
     # Then we register a new account or update an existing account.
     # First register a new account with a contact set, then using the same
     # key call register with a different contact and see that it was updated.
-    response = yield client.register(
+    response = yield client.start(
         email='txacme-test1@twstedmatrix.org,txacme-test2@twstedmatrix.org')
 
     print('Account URI: %s' % (response.uri,))
     print('Account contact: %s' % (response.body.contact,))
 
+    # We request a single certificate for a list of domains and get an "order"
+    cert_key = generate_private_key('rsa')
+    order = yield client.submit_order(cert_key, requested_domains)
+
+    # Each order had a list of "authorizations" for which the challenge needs
+    # to be validated.
+    for authorization in order.authorizations:
+        yield answer_challenge(authorization, client, responders, clock=reactor)
+
+    certificate = yield get_certificate(order, client, clock=reactor)
+
+    print('Got a new cert:\n')
+    print(certificate.body)
+
+    cert_key_pem = cert_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+        )
+
+    yield start_https_demo_server(cert_key_pem, certificate.body)
+
     # Cleanup the client and disconnect any persistent connection to the
     # ACME server.
-    client.stop()
+    yield client.stop()
+
+    print('txacme work done.')
+    print('Press Ctrl+C to end the process.')
+
 
 def stop():
     """
+    Stop and cleanup the whole shebang.
     """
-    reactor.stop()
-    acme_server.kill()
-    _, tasks = parse_messages([open(LOG_PATH, 'r')])
-    render_tasks(sys.stdout.write, tasks)
+    if pebble_thread:
+        pebble_thread.join(5)
 
 
+def eb_client_failure(failure):
+    """
+    Called when any of the client operation fails.
+    """
+    failure.trap(ClientError)
+    print (failure.value)
 
-if len(sys.argv) < 3:
-    print('Usage: %s API_ENDPOINT REQUSTED_DOMAIN\n' % (sys.argv[0],))
-    print('ACME v2 endpoints:')
+def eb_general_failure(failure):
+    """
+    Called when any operation fails.
+    """
+    print(failure)
+
+
+if len(sys.argv) < 2:
+    print('Usage: %s REQUSTED_DOMAINS [API_ENDPOINT]\n' % (sys.argv[0],))
+    print('REQUSTED_DOMAINS -> comma separated list of domains')
+    print('It will start PEBBLE if API_ENDPOINT is not provided.')
+
+    print('\nACME v2 endpoints:')
     print('[Production] https://acme-v02.api.letsencrypt.org/directory')
     print('[Staging] https://acme-staging-v02.api.letsencrypt.org/directory')
     sys.exit(1)
 
-acme_url = sys.argv[1]
-print ("Using ACME at %s" % (acme_url,))
-#to_file(open(LOG_PATH, 'w'))
-#to_file(sys.stdout)
+pebble_thread = None
+try:
+    acme_url = sys.argv[2]
+except IndexError:
+    pebble_thread = start_acme_server()
+    acme_url = 'https://localhost:14000/dir'
 
 
-acme_server = start_acme_server()
-print('Pebble server available at https://localhost:14000/dir')
+requested_domains = [d.strip().decode('utf-8') for d in sys.argv[1].split(',')]
 
-start_responder()
+print('\n\n')
+print('-' * 70)
+print('Using ACME at %s' % (acme_url,))
+print('Requesting a single certificate for %s' % (requested_domains,))
+print(
+    'HTTP-01 responser at '
+    'http://localhost:5002/.well-known/acme-challenge/test.txt'
+    )
+print('-' * 70)
+print('\n\n')
 
-d = start_client()
-d.addErrback(lambda failure: print(failure))
-d.addBoth(lambda _: stop())
+to_file(sys.stdout)
 
-reactor.run()
+
+def main(reactor):
+    d = get_things_done()
+    d.addErrback(eb_client_failure)
+    d.addErrback(eb_general_failure)
+    d.addBoth(lambda _: stop())
+    return d
+
+if __name__ == '__main__':
+    task.react(main)

@@ -45,7 +45,7 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
         ],
     install_requires=[
-        'acme>=0.21.0,<1.0.0',
+        'acme>=1.0.0',
         'attrs>=17.4.0',
         'eliot>=0.8.0',
         'josepy',
