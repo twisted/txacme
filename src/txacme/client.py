@@ -154,8 +154,7 @@ class Client(object):
 
         This cancels pending operations and does cleanup.
 
-        :return: When operation is done.
-        :rtype: Deferred[None]
+        :return: A deferred which files when the client is stopped.
         """
         return self._client.stop()
 
@@ -810,8 +809,7 @@ class JWSClient(object):
 
         This cancels pending operations and does cleanup.
 
-        :return: When operation is done.
-        :rtype: Deferred[None]
+        :return: A deferred which fires when the client is stopped.
         """
         if self._current_request and not self._current_request.called:
             self._current_request.addErrback(lambda _: None)
