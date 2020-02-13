@@ -32,8 +32,8 @@ class TXACMETestCase(TestCase):
         # Make sure the main reactor is clean after each test.
         junk = []
         for delayed_call in reactor.getDelayedCalls():
+            junk.append(delayed_call.func)
             delayed_call.cancel()
-            junk.append(delayed_call)
         if junk:
             raise AssertionError(
                 'Reactor is not clean. DelayedCalls: %s' % (junk,))

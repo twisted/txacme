@@ -21,6 +21,7 @@ from twisted.plugin import IPlugin
 from twisted.plugins import txacme_endpoint
 from twisted.python.filepath import FilePath
 from twisted.python.url import URL
+from twisted.test.proto_helpers import MemoryReactorClock
 from txsni.snimap import HostDirectoryMap
 from zope.interface import implementer
 from zope.interface.verify import verifyObject
@@ -151,7 +152,7 @@ class PluginTests(TXACMETestCase):
         tempdir = self.useFixture(TempDir()).path
         temp_path = FilePath(tempdir)
         key_path = temp_path.child('client.key')
-        reactor = object()
+        reactor = MemoryReactorClock()
         self.assertThat(
             parser.parseStreamServer(
                 reactor, tempdir, 'tcp', '443', timeout=0),
@@ -178,6 +179,9 @@ class PluginTests(TXACMETestCase):
         # will serve the same certificates.
         parser.parseStreamServer(reactor, tempdir, 'tcp', '443', timeout=0)
         self.assertThat(key_path.getContent(), Equals(key_data))
+
+        # Check that reactor is clean.
+        self.assertEquals(0, len(reactor.getDelayedCalls()))
 
 
 class LoadClientKeyTests(TXACMETestCase):
