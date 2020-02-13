@@ -50,6 +50,10 @@ There is a tox environment dedicated to code style checks::
 
     $ tox -e flake8
 
+and another one for documentation and API checks::
+
+    $ tox -e docs
+
 If executing the `tox` environment is too slow for you, you can always enable
 a specific environment and execute the test with `trial`::
 
