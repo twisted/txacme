@@ -1,0 +1,4 @@
+INCOMPATIBLE CHANGE: txacme.client.JWSClient is now initialized with an
+twisted.web.client.Agent instead of treq.client.HTTPClient.
+In this way the usage of Treq is internal to txacme.
+It was changed to make it easier to close the idle persistent connection.

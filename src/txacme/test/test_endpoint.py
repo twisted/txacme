@@ -7,7 +7,7 @@ from josepy.jwk import JWKRSA
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fixtures import TempDir
-from testtools import ExpectedException, TestCase
+from testtools import ExpectedException
 from testtools.matchers import (
     Always, Equals, Is, IsInstance, MatchesAll, MatchesPredicate,
     MatchesStructure)
@@ -21,6 +21,7 @@ from twisted.plugin import IPlugin
 from twisted.plugins import txacme_endpoint
 from twisted.python.filepath import FilePath
 from twisted.python.url import URL
+from twisted.test.proto_helpers import MemoryReactorClock
 from txsni.snimap import HostDirectoryMap
 from zope.interface import implementer
 from zope.interface.verify import verifyObject
@@ -29,7 +30,7 @@ from txacme._endpoint_parser import _AcmeParser
 from txacme.endpoint import AutoTLSEndpoint, load_or_create_client_key
 from txacme.store import DirectoryStore
 from txacme.test.test_client import RSA_KEY_512
-from txacme.testing import FakeClient, MemoryStore
+from txacme.testing import FakeClient, MemoryStore, TXACMETestCase
 from txacme.urls import LETSENCRYPT_DIRECTORY, LETSENCRYPT_STAGING_DIRECTORY
 
 
@@ -51,7 +52,7 @@ class DummyEndpoint(object):
         return succeed(DummyPort())
 
 
-class EndpointTests(TestCase):
+class EndpointTests(TXACMETestCase):
     """
     Tests for `~txacme.endpoint.AutoTLSEndpoint`.
     """
@@ -64,7 +65,7 @@ class EndpointTests(TestCase):
         self.endpoint = AutoTLSEndpoint(
             reactor=clock,
             directory=URL.fromText(u'https://example.com/'),
-            client_creator=lambda reactor, directory: succeed(client),
+            client=client,
             cert_store=MemoryStore(),
             cert_mapping={},
             sub_endpoint=DummyEndpoint())
@@ -78,7 +79,7 @@ class EndpointTests(TestCase):
             AutoTLSEndpoint(
                 reactor=Clock(),
                 directory='/wrong/kind/of/directory',
-                client_creator=None,
+                client=None,
                 cert_store=None,
                 cert_mapping={},
                 sub_endpoint=DummyEndpoint())
@@ -106,10 +107,11 @@ class EndpointTests(TestCase):
             MatchesStructure(running=Equals(False)))
 
 
-class PluginTests(TestCase):
+class PluginTests(TXACMETestCase):
     """
     Tests for the plugins.
     """
+
     def test_le_parser(self):
         """
         The ``le:`` parser uses the Let's Encrypt production directory, and
@@ -150,7 +152,7 @@ class PluginTests(TestCase):
         tempdir = self.useFixture(TempDir()).path
         temp_path = FilePath(tempdir)
         key_path = temp_path.child('client.key')
-        reactor = object()
+        reactor = MemoryReactorClock()
         self.assertThat(
             parser.parseStreamServer(
                 reactor, tempdir, 'tcp', '443', timeout=0),
@@ -172,11 +174,17 @@ class PluginTests(TestCase):
                         '%r is not a stream server endpoint'))))
         self.assertThat(key_path.isfile(), Equals(True))
         key_data = key_path.getContent()
-        parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
+
+        # Multiple instances with certificates from the same local directory,
+        # will serve the same certificates.
+        parser.parseStreamServer(reactor, tempdir, 'tcp', '443', timeout=0)
         self.assertThat(key_path.getContent(), Equals(key_data))
 
+        # Check that reactor is clean.
+        self.assertEquals(0, len(reactor.getDelayedCalls()))
 
-class LoadClientKeyTests(TestCase):
+
+class LoadClientKeyTests(TXACMETestCase):
     """
     Tests for `~txacme.endpoint.load_or_create_client_key`.
     """
