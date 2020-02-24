@@ -1,7 +1,0 @@
-## See CONTRIBUTING.rst for more details.
-
-## Contributor Checklist:
-
-* [ ] Created a newsfragment in src/txacme/newsfragments/.
-* [ ] Updated the automated tests.
-* [ ] The changes pass minimal style checks.

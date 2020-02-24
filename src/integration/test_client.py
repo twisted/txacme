@@ -188,7 +188,12 @@ class LetsEncryptStagingTLSSNI01Tests(ClientTestsMixin, TestCase):
         ENDPOINT = ENDPOINT.encode('utf-8')
 
     def _create_client(self, key):
-        return Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
+        return (
+            Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
+            .addCallback(tap(
+                lambda client: self.addCleanup(
+                    client._client._treq._agent._pool.closeCachedConnections)))
+            )
 
     def _create_responder(self):
         action = start_action(action_type=u'integration:create_responder')
@@ -226,7 +231,12 @@ class LetsEncryptStagingLibcloudTests(ClientTestsMixin, TestCase):
         skip = 'Must provide $ACME_HOST and $LIBCLOUD_*'
 
     def _create_client(self, key):
-        return Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
+        return (
+            Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
+            .addCallback(tap(
+                lambda client: self.addCleanup(
+                    client._client._treq._agent._pool.closeCachedConnections)))
+            )
 
     def _create_responder(self):
         with start_action(action_type=u'integration:create_responder'):
