@@ -84,7 +84,7 @@ class AutoTLSEndpoint(object):
     reactor = attr.ib()
     directory = attr.ib(
         validator=lambda inst, a, value: check_directory_url_type(value))
-    client = attr.ib()
+    client_creator = attr.ib()
     cert_store = attr.ib()
     cert_mapping = attr.ib()
     sub_endpoint = attr.ib()
@@ -101,7 +101,8 @@ class AutoTLSEndpoint(object):
         def _got_port(port):
             self.service = AcmeIssuingService(
                 cert_store=self.cert_store,
-                client=self.client,
+                client_creator=partial(
+                    self.client_creator, self.reactor, self.directory),
                 clock=self.reactor,
                 responders=[responder],
                 check_interval=self.check_interval,
@@ -173,8 +174,8 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     return AutoTLSEndpoint(
         reactor=reactor,
         directory=directory,
-        client=Client.from_url(
-            reactor, directory, key=acme_key, alg=RS256, timeout=timeout),
+        client_creator=partial(
+            Client.from_url, key=acme_key, alg=RS256, timeout=timeout),
         cert_store=DirectoryStore(pem_path),
         cert_mapping=HostDirectoryMap(pem_path),
         sub_endpoint=serverFromString(reactor, sub))
