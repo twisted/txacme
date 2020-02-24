@@ -79,7 +79,7 @@ def _default_client(jws_client, reactor, key, alg):
     if jws_client is None:
         pool = HTTPConnectionPool(reactor)
         agent = Agent(reactor, pool=pool)
-        jws_client = JWSClient(HTTPClient(agent=agent), key, alg)
+        jws_client = JWSClient(agent, key, alg)
     return jws_client
 
 
@@ -116,6 +116,8 @@ class Client(object):
         """
         Construct a client from an ACME directory at a given URL.
 
+        At construct time, it validates the ACME directory.
+
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
             See `txacme.urls` for constants for various well-known public
             directories.
@@ -145,6 +147,16 @@ class Client(object):
                     tap(lambda d: action.add_success_fields(directory=d)))
                 .addCallback(cls, reactor, key, jws_client)
                 .addActionFinish())
+
+    def stop(self):
+        """
+        Stops the client operation.
+
+        This cancels pending operations and does cleanup.
+
+        :return: A deferred which files when the client is stopped.
+        """
+        return self._client.stop()
 
     def register(self, new_reg=None):
         """
@@ -675,9 +687,11 @@ class JWSClient(object):
     """
     timeout = _DEFAULT_TIMEOUT
 
-    def __init__(self, treq_client, key, alg,
+    def __init__(self, agent, key, alg,
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
-        self._treq = treq_client
+        self._treq = HTTPClient(agent=agent)
+        self._agent = agent
+        self._current_request = None
         self._key = key
         self._alg = alg
         self._user_agent = user_agent
@@ -765,20 +779,47 @@ class JWSClient(object):
 
         :return: Deferred firing with the HTTP response.
         """
+        def cb_request_done(result):
+            """
+            Called when we got a response from the request.
+            """
+            self._current_request = None
+            return result
+
         action = LOG_JWS_REQUEST(url=url)
         with action.context():
             headers = kwargs.setdefault('headers', Headers())
             headers.setRawHeaders(b'user-agent', [self._user_agent])
             kwargs.setdefault('timeout', self.timeout)
+            self._current_request = self._treq.request(
+                method, url, *args, **kwargs)
             return (
-                DeferredContext(
-                    self._treq.request(method, url, *args, **kwargs))
+                DeferredContext(self._current_request)
+                .addCallback(cb_request_done)
                 .addCallback(
                     tap(lambda r: action.add_success_fields(
                         code=r.code,
                         content_type=r.headers.getRawHeaders(
                             b'content-type', [None])[0])))
                 .addActionFinish())
+
+    def stop(self):
+        """
+        Stops the operation.
+
+        This cancels pending operations and does cleanup.
+
+        :return: A deferred which fires when the client is stopped.
+        """
+        if self._current_request and not self._current_request.called:
+            self._current_request.addErrback(lambda _: None)
+            self._current_request.cancel()
+            self._current_request = None
+
+        agent_pool = getattr(self._agent, '_pool', None)
+        if agent_pool:
+            return agent_pool.closeCachedConnections()
+        return succeed(None)
 
     def head(self, url, *args, **kwargs):
         """
