@@ -23,26 +23,20 @@ $ python docs/service_example.py \
 
 """
 from __future__ import unicode_literals, print_function
-from subprocess import Popen, PIPE
-from threading import Thread
-import os
-import socket
 import sys
-import time
 
 import pem
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
-from eliot import add_destinations, to_file
+from eliot import add_destinations
 from eliot.parse import Parser
 from eliottree import render_tasks
 
 from josepy.jwa import RS256
 from josepy.jwk import JWKRSA
-from twisted.internet import reactor, defer, ssl, task
+from twisted.internet import reactor, defer, task
 from twisted.internet.endpoints import TCP4ServerEndpoint
 from twisted.web import http
 from twisted.web.resource import Resource
@@ -58,7 +52,7 @@ from txacme.util import generate_private_key
 # WARNING. THIS DISABLES SSL validation in twisted client.
 # Is here to make the example easier to read.
 import twisted.internet._sslverify as v
-v.platformTrust = lambda : None
+v.platformTrust = lambda: None
 
 HTTP_O1_PORT = 5002
 
@@ -248,13 +242,11 @@ rW3pcIZkcFhc+2YccGdoiP1DfJhQKyuH+oQgTSp2w3eiNX/t/CaWw4XDHeE0C7kQ
 -----END CERTIFICATE-----
 """)
 
-
-
     def get(self, server_name):
         try:
             return defer.succeed(self._store[server_name])
         except KeyError:
-            return fail()
+            return defer.fail()
 
     def store(self, server_name, pem_objects):
         self._store[server_name] = pem_objects
@@ -375,7 +367,6 @@ print(
 print('-' * 70)
 print('\n\n')
 
-#to_file(sys.stdout)
 add_destinations(EliotTreeDestination(
     colorize=True, colorize_tree=True, human_readable=True))
 
@@ -385,6 +376,7 @@ def main(reactor):
     d.addErrback(eb_general_failure)
     d.addBoth(lambda _: stop())
     return d
+
 
 if __name__ == '__main__':
     task.react(main)
