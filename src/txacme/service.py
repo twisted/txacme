@@ -258,14 +258,10 @@ class AcmeIssuingService(Service):
         self._waiting.append(d)
         return d
 
-    def startService(self):
+    def start(self):
         """
-        Start operating the service.
-
-        Returns a deferred which signals that the service is ready.
-
-        See `when_certs_valid` if you want to be notified when all the
-        certificate from the storage were validated after startup.
+        Like startService, but will return a deferred once the service was
+        started and operational.
         """
         Service.startService(self)
 
@@ -280,8 +276,16 @@ class AcmeIssuingService(Service):
 
         deferred = self._client.start(email=self._email)
         deferred.addCallback(cb_start)
-        # This is a hack as startService API does not support returning
-        # a deferred.
+        return deferred
+
+    def startService(self):
+        """
+        Start operating the service.
+
+        See `when_certs_valid` if you want to be notified when all the
+        certificate from the storage were validated after startup.
+        """
+        deferred = self.start()
         deferred.addErrback(self._panic, 'FAIL-TO-START')
 
     def stopService(self):
