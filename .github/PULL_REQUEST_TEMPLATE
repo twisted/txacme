@@ -2,6 +2,8 @@
 
 ## Contributor Checklist:
 
+* [ ] The Pull Request description explain the purpose of this PR or provides
+  a link / reference to a GitHub Issue.
 * [ ] Created a newsfragment in src/txacme/newsfragments/.
 * [ ] Updated the automated tests.
 * [ ] The changes pass minimal style checks.
