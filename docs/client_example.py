@@ -11,6 +11,18 @@ use your one ACME server.
 It uses `.tox` as the build directory.
 
 https://www.rfc-editor.org/rfc/rfc8555.html
+
+Example usage:
+
+# Copy pebble binary to the following path: /tmp/pebble_linux-amd64
+# Update /etc/hosts and add test.local and www.test.local as names for
+  127.0.0.1
+
+# Make sure all python txacme dependencies are installed.
+$ python docs/client_example.py test.local
+
+# After it starts and all is fine you could connect to https://test.local:5003
+# and see the new certificate.
 """
 from __future__ import unicode_literals, print_function
 from subprocess import Popen, PIPE
@@ -24,7 +36,11 @@ from acme.errors import ClientError
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from eliot import to_file
+
+from eliot import add_destinations, to_file
+from eliot.parse import Parser
+from eliottree import render_tasks
+
 from josepy.jwa import RS256
 from josepy.jwk import JWKRSA
 from twisted.internet import reactor, defer, ssl, task
@@ -88,6 +104,18 @@ yLwHm1esy/txlB27jQ26/8LabbLRQkFCiXxdJ9W1+TEWoq0YT25Awek=
 # Uncomment this to have a new account key generated at each run.
 # ACCOUNT_KEY_PEM = ''
 
+
+class EliotTreeDestination:
+    def __init__(self, out=sys.stdout.write, **opts):
+        self.out = out
+        self.opts = opts
+        self._parser = Parser()
+
+    def __call__(self, message):
+        tasks, self._parser = self._parser.add(message)
+
+        if tasks:
+            render_tasks(self.out, tasks, **self.opts)
 
 def _get_account_key():
     """
@@ -303,12 +331,18 @@ def get_things_done():
 
     # We first validate the directory.
     account_key = _get_account_key()
-    client = yield Client.from_url(
-        reactor,
-        URL.fromText(acme_url.decode('utf-8')),
-        key=JWKRSA(key=account_key),
-        alg=RS256,
-        )
+    try:
+        client = yield Client.from_url(
+            reactor,
+            URL.fromText(acme_url.decode('utf-8')),
+            key=JWKRSA(key=account_key),
+            alg=RS256,
+            )
+    except Exception as error:
+        print('\n\nFailed to connect to ACME directory. %s' % (error,))
+        yield reactor.stop()
+        defer.returnValue(None)
+
 
     # Then we register a new account or update an existing account.
     # First register a new account with a contact set, then using the same
@@ -326,7 +360,13 @@ def get_things_done():
     # Each order had a list of "authorizations" for which the challenge needs
     # to be validated.
     for authorization in order.authorizations:
-        yield answer_challenge(authorization, client, responders, clock=reactor)
+        try:
+            yield answer_challenge(
+                authorization, client, responders, clock=reactor)
+        except Exception as error:
+            print('\n\nFailed to validate a challenge. %s' % (error,))
+            yield reactor.stop()
+            defer.returnValue(None)
 
     certificate = yield get_certificate(order, client, clock=reactor)
 
@@ -339,14 +379,15 @@ def get_things_done():
         encryption_algorithm=serialization.NoEncryption(),
         )
 
-    yield start_https_demo_server(cert_key_pem, certificate.body)
-
     # Cleanup the client and disconnect any persistent connection to the
     # ACME server.
     yield client.stop()
 
-    print('txacme work done.')
-    print('Press Ctrl+C to end the process.')
+
+    # The new certificate is available and we can start a demo HTTPS server
+    # using it.
+    yield start_https_demo_server(cert_key_pem, certificate.body)
+    print('txacme demo done.')
 
 
 def stop():
@@ -355,6 +396,7 @@ def stop():
     """
     if pebble_thread:
         pebble_thread.join(5)
+    print('Press Ctrl+C to end the process.')
 
 
 def eb_client_failure(failure):
@@ -371,15 +413,28 @@ def eb_general_failure(failure):
     print(failure)
 
 
-if len(sys.argv) < 2:
+def show_usage():
+    """
+    Show the help on how to use the command.
+    """
     print('Usage: %s REQUSTED_DOMAINS [API_ENDPOINT]\n' % (sys.argv[0],))
     print('REQUSTED_DOMAINS -> comma separated list of domains')
-    print('It will start PEBBLE if API_ENDPOINT is not provided.')
+    print('It will start a local PEBBLE if API_ENDPOINT is not provided.')
 
     print('\nACME v2 endpoints:')
     print('[Production] https://acme-v02.api.letsencrypt.org/directory')
     print('[Staging] https://acme-staging-v02.api.letsencrypt.org/directory')
     sys.exit(1)
+
+
+for arg in sys.argv:
+    if arg.lower().strip() in ['-h', '--help']:
+        show_usage()
+
+
+if len(sys.argv) < 2:
+    show_usage()
+
 
 pebble_thread = None
 try:
@@ -402,7 +457,9 @@ print(
 print('-' * 70)
 print('\n\n')
 
-to_file(sys.stdout)
+#to_file(sys.stdout)
+add_destinations(EliotTreeDestination(
+    colorize=True, colorize_tree=True, human_readable=True))
 
 
 def main(reactor):
