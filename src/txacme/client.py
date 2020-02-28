@@ -66,7 +66,8 @@ Extracted from RFC 8555
 3. client.start() - creates or updates an account.
 4. order = client.submit_order(new_cert_key, [list,domains])
 5. list(order.authorizations) - fetch done as part of client.submit_order()
-6. client.check_authoriztion(order.authorizations[0]) ..and for each authorization
+6. client.check_authoriztion(order.authorizations[0]) and for each
+   authorization
 7. poll as part of answer_challenge
 8. client.finalize(order)
 9. client.check_order(order)
@@ -74,17 +75,14 @@ Extracted from RFC 8555
 
 """
 import re
-import time
 
 from acme import errors, messages
 from acme.crypto_util import make_csr
 from acme.jws import JWS, Header
 from acme.messages import (
     STATUS_PENDING,
-    STATUS_PROCESSING,
     STATUS_VALID,
     STATUS_INVALID,
-    STATUS_READY,
     )
 
 from josepy import ComparableX509, JSONObjectWithFields
@@ -105,14 +103,20 @@ from twisted.web.http_headers import Headers
 
 from txacme import __version__
 from txacme.logging import (
-    LOG_ACME_ANSWER_CHALLENGE, LOG_ACME_CONSUME_DIRECTORY,
-    LOG_ACME_CREATE_AUTHORIZATION, LOG_ACME_FETCH_CHAIN,
-    LOG_ACME_POLL_AUTHORIZATION, LOG_ACME_REGISTER,
-    LOG_ACME_REQUEST_CERTIFICATE, LOG_ACME_UPDATE_REGISTRATION,
-    LOG_HTTP_PARSE_LINKS, LOG_JWS_ADD_NONCE, LOG_JWS_CHECK_RESPONSE,
-    LOG_JWS_GET, LOG_JWS_GET_NONCE, LOG_JWS_HEAD, LOG_JWS_POST,
-    LOG_JWS_REQUEST, LOG_JWS_SIGN)
-from txacme.util import check_directory_url_type, generate_private_key, tap
+    LOG_ACME_ANSWER_CHALLENGE,
+    LOG_ACME_CONSUME_DIRECTORY,
+    LOG_ACME_REGISTER,
+    LOG_HTTP_PARSE_LINKS,
+    LOG_JWS_ADD_NONCE,
+    LOG_JWS_CHECK_RESPONSE,
+    LOG_JWS_GET,
+    LOG_JWS_GET_NONCE,
+    LOG_JWS_HEAD,
+    LOG_JWS_POST,
+    LOG_JWS_REQUEST,
+    LOG_JWS_SIGN,
+    )
+from txacme.util import check_directory_url_type, tap
 
 _DEFAULT_TIMEOUT = 40
 
@@ -502,8 +506,11 @@ class Client(object):
         :rtype: Deferred[`acme.messages.OrderResource`]
         :return: The issued certificate.
         """
-        csr = OpenSSL.crypto.load_certificate_request(OpenSSL.crypto.FILETYPE_PEM, order.csr_pem)
-        response = yield self._client.post(order.body.finalize, obj=messages.CertificateRequest(csr=ComparableX509(csr)))
+        csr = OpenSSL.crypto.load_certificate_request(
+            OpenSSL.crypto.FILETYPE_PEM, order.csr_pem)
+        response = yield self._client.post(
+            order.body.finalize, obj=messages.CertificateRequest(
+                csr=ComparableX509(csr)))
         self._expect_response(response, [http.OK])
         body = yield response.json()
         defer.returnValue(messages.OrderResource(
@@ -555,7 +562,8 @@ def _find_supported_challenge(authzr, responders):
     Find a challenge combination that consists of a single challenge that the
     responder can satisfy.
 
-    :param ~acme.messages.AuthorizationResource authzr: The authorization to examine.
+    :param ~acme.messages.AuthorizationResource authzr:
+        The authorization to examine.
 
     :type responder: List[`~txacme.interfaces.IResponder`]
     :param responder: The possible responders to use.
@@ -573,7 +581,7 @@ def _find_supported_challenge(authzr, responders):
             if r_type == challenge.chall.typ:
                 return (responder, challenge)
 
-    raise NoSupportedChallenges(order)
+    raise NoSupportedChallenges(authzr)
 
 
 @defer.inlineCallbacks
@@ -604,7 +612,8 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
                     V              V              V
                  revoked      deactivated      expired
 
-    :param ~acme.messages.AuthorizationResource authz: The authorization answer the challenges for.
+    :param ~acme.messages.AuthorizationResource authz:
+        The authorization answer the challenges for.
     :param .Client client: The ACME client.
 
     :type responders: List[`~txacme.interfaces.IResponder`]
@@ -853,15 +862,19 @@ class JWSClient(object):
 
         def _got_json(jobj):
             if 400 <= response.code < 600:
-                if response_ct.lower().startswith(JSON_ERROR_CONTENT_TYPE) and jobj is not None:
+                if (
+                    response_ct.lower().startswith(JSON_ERROR_CONTENT_TYPE)
+                    and jobj is not None
+                        ):
                     raise ServerError(
                         messages.Error.from_json(jobj), response)
                 else:
                     # response is not JSON object
                     raise errors.ClientError(response)
-            elif content_type not in response_ct.lower() :
+            elif content_type not in response_ct.lower():
                 raise errors.ClientError(
-                    'Unexpected response Content-Type: {0!r}. Expecting {1!r}.'.format(
+                    'Unexpected response Content-Type: {0!r}. '
+                    'Expecting {1!r}.'.format(
                         response_ct, content_type))
             elif JSON_CONTENT_TYPE in content_type.lower() and jobj is None:
                 raise errors.ClientError(response)
@@ -1037,7 +1050,11 @@ class JWSClient(object):
                         lambda nonce: action.add_success_fields(nonce=nonce)))
                     .addActionFinish())
 
-    def _post(self, url, obj, content_type, response_type=JSON_CONTENT_TYPE, kid=None, **kwargs):
+    def _post(
+        self, url, obj, content_type,
+        response_type=JSON_CONTENT_TYPE, kid=None,
+        **kwargs
+            ):
         """
         POST an object and check the response.
 
@@ -1099,5 +1116,5 @@ class JWSClient(object):
 __all__ = [
     'Client', 'JWSClient', 'ServerError', 'JSON_CONTENT_TYPE',
     'JSON_ERROR_CONTENT_TYPE', 'REPLAY_NONCE_HEADER', 'fqdn_identifier',
-    'answer_challenge', 'poll_until_valid', 'NoSupportedChallenges',
+    'answer_challenge', 'get_certificate', 'NoSupportedChallenges',
     'AuthorizationFailed', 'DER_CONTENT_TYPE']

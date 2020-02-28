@@ -93,27 +93,6 @@ LOG_ACME_REGISTER = ActionType(
                  u'The resulting registration')),
     u'Registering with an ACME server')
 
-LOG_ACME_UPDATE_REGISTRATION = ActionType(
-    u'txacme:acme:client:registration:update',
-    fields(Field(u'registration',
-                 methodcaller('to_json'),
-                 u'An ACME registration'),
-           uri=unicode),
-    fields(Field(u'registration',
-                 methodcaller('to_json'),
-                 u'The updated registration')),
-    u'Updating a registration')
-
-LOG_ACME_CREATE_AUTHORIZATION = ActionType(
-    u'txacme:acme:client:authorization:create',
-    fields(Field(u'identifier',
-                 methodcaller('to_json'),
-                 u'An identifier')),
-    fields(Field(u'authorization',
-                 methodcaller('to_json'),
-                 u'The authorization')),
-    u'Creating an authorization')
-
 LOG_ACME_ANSWER_CHALLENGE = ActionType(
     u'txacme:acme:client:challenge:answer',
     fields(Field(u'challenge_body',
@@ -126,28 +105,3 @@ LOG_ACME_ANSWER_CHALLENGE = ActionType(
                  methodcaller('to_json'),
                  u'The updated challenge')),
     u'Answering an authorization challenge')
-
-LOG_ACME_POLL_AUTHORIZATION = ActionType(
-    u'txacme:acme:client:authorization:poll',
-    fields(Field(u'authorization',
-                 methodcaller('to_json'),
-                 u'The authorization resource')),
-    fields(Field(u'authorization',
-                 methodcaller('to_json'),
-                 u'The updated authorization'),
-           Field.for_types(u'retry_after',
-                           [int, float],
-                           u'How long before polling again?')),
-    u'Polling an authorization')
-
-LOG_ACME_REQUEST_CERTIFICATE = ActionType(
-    u'txacme:acme:client:certificate:request',
-    fields(),
-    fields(),
-    u'Requesting a certificate')
-
-LOG_ACME_FETCH_CHAIN = ActionType(
-    u'txacme:acme:client:certificate:fetch-chain',
-    fields(),
-    fields(),
-    u'Fetching a certificate chain')
