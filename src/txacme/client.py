@@ -184,6 +184,9 @@ class Client(object):
     """
     ACME client interface.
 
+    The current implementation does not support multiple parallel requests.
+    This is due to the nonce handling.
+
     Should be initialized with 'Client.from_url'.
     """
     def __init__(self, directory, reactor, key, jws_client):
@@ -411,6 +414,11 @@ class Client(object):
         """
         action = LOG_ACME_ANSWER_CHALLENGE(
             challenge_body=challenge_body, response=response)
+
+        if challenge_body.status != STATUS_PENDING:
+            # We already have an answer.
+            return challenge_body
+
         with action.context():
             return (
                 DeferredContext(

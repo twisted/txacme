@@ -29,7 +29,14 @@ The file will have the following format: ISSUE_ID.ITEM_TYPE.
 
 `ITEM_TYPE` is one of the
 `default types <https://github.com/hawkowl/towncrier#news-fragments>`_
-supported by Towncrier.
+supported by Towncrier. Below is the list for your convenience (might get
+out of date):
+
+* .feature: Signifying a new feature.
+* .bugfix: Signifying a bug fix.
+* .doc: Signifying a documentation improvement.
+* .removal: Signifying a deprecation or removal of public API.
+* .misc: A ticket has been closed, but it is not of interest to users.
 
 
 Executing tests and checking coverage

@@ -1,0 +1,2 @@
+The API for txacme.client.Client was completely change as ACME v2 has different
+primitives in comparison with ACME v1.

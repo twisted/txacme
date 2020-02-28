@@ -66,6 +66,7 @@ setup(
             'testrepository>=0.0.20',
             'testscenarios',
             'testtools>=2.1.0',
+            'eliot-tree',
             ],
         },
     )
