@@ -164,7 +164,7 @@ class HTTP01Responder(StaticTextResource):
         # Add a static response to help with connection troubleshooting.
         self.putChild(b'test.txt', StaticTextResource('Let\'s Encrypt Ready'))
 
-    def start_responding(self, challenge, response):
+    def start_responding(self, ignore, challenge, response):
         """
         Prepare for the ACME server to validate the challenge.
         """
@@ -173,7 +173,7 @@ class HTTP01Responder(StaticTextResource):
             StaticTextResource(response.key_authorization),
             )
 
-    def stop_responding(self, challenge):
+    def stop_responding(self, ignore, challenge, ignored):
         """
         Remove the child resource once the process is done.
         """

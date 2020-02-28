@@ -630,7 +630,7 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
     responder, challenge = _find_supported_challenge(authz, responders)
     response = challenge.response(client.key)
     yield defer.maybeDeferred(
-        responder.start_responding, challenge.chall, response)
+        responder.start_responding, 'ignore', challenge.chall, response)
 
     response = yield client.answer_challenge(challenge, response)
 
@@ -655,7 +655,8 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
             yield deferLater(clock, sleep, lambda: None)
             sleep += sleep
     finally:
-        yield defer.maybeDeferred(responder.stop_responding, challenge.chall)
+        yield defer.maybeDeferred(
+            responder.stop_responding, 'ignore', challenge.chall, 'ignore')
 
 
 @defer.inlineCallbacks
