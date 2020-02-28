@@ -450,31 +450,35 @@ class Client(object):
             raise errors.UnexpectedUpdate(challenge.uri)
         return challenge
 
-    def check_authorization(self, authz):
+    def check_authorization(self, authzz):
         """
         Check the status of the authorization.
 
-        Return an updated message.Authorization.
+        Return an updated message.AuthorizationResource.
         """
-        return self._poll(authz.uri, messages.Authorization)
+        return self._poll(
+            authzz.uri, messages.AuthorizationResource, messages.Authorization)
 
-    def check_order(self, order):
+    def check_order(self, orderr):
         """
         Check the status of the authorization.
 
-        Return an updated message.Authorization.
+        Return an updated message.OrderResource.
         """
-        return self._poll(order.uri, messages.Order)
+        return self._poll(orderr.uri, messages.OrderResource, messages.Order)
 
     @defer.inlineCallbacks
-    def _poll(self, url, message_class):
+    def _poll(self, url, resource_class, body_class,):
         """
         Make a POST-as-GET for a resource.
         """
         response = yield self._client.post(url, obj=None)
         self._expect_response(response, [http.OK])
         body = yield response.json()
-        defer.returnValue(message_class().from_json(body))
+        defer.returnValue(resource_class(
+            uri=url,
+            body=body_class.from_json(body),
+            ))
 
     @defer.inlineCallbacks
     def finalize(self, order):
@@ -487,14 +491,17 @@ class Client(object):
         :param ~acme.messages.Order order: The order for which the certificate
             is requested.
 
-        :rtype: Deferred[`acme.messages.Order`]
+        :rtype: Deferred[`acme.messages.OrderResource`]
         :return: The issued certificate.
         """
         csr = OpenSSL.crypto.load_certificate_request(OpenSSL.crypto.FILETYPE_PEM, order.csr_pem)
         response = yield self._client.post(order.body.finalize, obj=messages.CertificateRequest(csr=ComparableX509(csr)))
         self._expect_response(response, [http.OK])
         body = yield response.json()
-        defer.returnValue(messages.Order().from_json(body))
+        defer.returnValue(messages.OrderResource(
+            uri=order.uri,
+            body=messages.Order.from_json(body),
+            ))
 
     @classmethod
     def _parse_certificate(cls, response):
@@ -566,8 +573,8 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
     """
     Complete an authorization using a responder.
 
-    It waits for the authorization to be completed for a maximum of 'timeout'
-    seconds.
+    It waits for the authorization to be completed (as valid or invliad)
+    for a maximum of 'timeout' seconds.
 
                       pending --------------------+
                          |                        |
@@ -599,6 +606,8 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
         reactor, when not testing.
     :param float timeout: Maximum time to poll in seconds, before giving up.
 
+    :raises AuthorizationFailed: If the challenge was not validated.
+
     :return: A deferred firing when the authorization is verified.
     """
     responder, challenge = _find_supported_challenge(authz, responders)
@@ -612,18 +621,19 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
     sleep = 0.5
     try:
         while True:
-            authorization = yield client.check_authorization(authz)
-            status = authorization.status
+            response = yield client.check_authorization(authz)
+            status = response.body.status
 
             if status == STATUS_INVALID:
-                raise AuthorizationFailed(authz)
+                # No need to wait longer as we got a definitive answer.
+                raise AuthorizationFailed(response)
 
             if status == STATUS_VALID:
                 # All good.
-                defer.returnValue(None)
+                defer.returnValue(response)
 
             if clock.seconds() - now > timeout:
-                raise AuthorizationFailed(authz)
+                raise AuthorizationFailed(response)
 
             yield deferLater(clock, sleep, lambda: None)
             sleep += sleep
@@ -632,7 +642,7 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
 
 
 @defer.inlineCallbacks
-def get_certificate(order, client, clock, timeout=300.0):
+def get_certificate(orderr, client, clock, timeout=300.0):
     """
     Finalize the order and return the associated certificate.
 
@@ -660,22 +670,24 @@ def get_certificate(order, client, clock, timeout=300.0):
      valid             invalid
 
 
-    :param ~acme.messages.OrderResource order: The order to finalize.
+    :param ~acme.messages.OrderResource orderr: The order to finalize.
     :param .Client client: The ACME client.
 
     :param clock: The ``IReactorTime`` implementation to use; usually the
         reactor, when not testing.
     :param float timeout: Maximum time to poll in seconds, before giving up.
 
+    :raises ServerError: If a certificate could not be retrieved.
+
     :return: A deferred firing when the PEM certificate is retrieved.
     """
-    orderr = yield client.finalize(order)
+    orderr = yield client.finalize(orderr)
 
     now = clock.seconds()
     sleep = 0.5
 
     while True:
-        status = orderr.status
+        status = orderr.body.status
 
         if status == STATUS_VALID:
             # All good.
@@ -685,14 +697,14 @@ def get_certificate(order, client, clock, timeout=300.0):
             raise ServerError('Order is now invalid.')
 
         if clock.seconds() - now > timeout:
-            raise AuthorizationFailed(authz)
+            raise ServerError('Timeout while waiting for order finalization.')
 
         yield deferLater(clock, sleep, lambda: None)
         sleep += sleep
 
-        orderr = yield client.check_order(order)
+        orderr = yield client.check_order(orderr)
 
-    certificate = yield client.fetch_certificate(orderr.certificate)
+    certificate = yield client.fetch_certificate(orderr.body.certificate)
     defer.returnValue(certificate)
 
 
