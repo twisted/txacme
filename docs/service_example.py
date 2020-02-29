@@ -5,8 +5,6 @@ capabilities.
 Each time it starts, if one is not defined, it will generate a new
 private key and register a new account.
 
-It uses `.tox` as the build directory.
-
 You will need to have a TXACME v2 server available and point the script to
 use that server.
 
@@ -223,7 +221,7 @@ class MemoryStore(object):
         else:
             self._store = dict(certs)
 
-        # This is a certificate which is expired
+        # This is a certificate which is expired.
         self._store['localhost'] = pem.parse("""
 -----BEGIN CERTIFICATE-----
 MIICPzCCAaigAwIBAgIBBzANBgkqhkiG9w0BAQUFADBGMQswCQYDVQQGEwJHQjEP
@@ -298,26 +296,18 @@ def get_things_done():
         panic=on_panic,
         )
 
-    # Service to start.
-    service.startService()
+    # Start the service and wait for it to start.
+    yield service.start()
 
     # Wait for the existing certificate from the storage to be available.
     yield service.when_certs_valid()
-
-    # Request single CN cert and wait for it to be available.
-    yield service.issue_cert(requested_domains[0])
 
     # Request a SAN ... if passed via command line.
     yield service.issue_cert(','.join(requested_domains))
 
     yield service.stopService()
 
-
-def stop():
-    """
-    Stop and cleanup the whole shebang.
-    """
-    print('Press Ctrl+C to end the process.')
+    print('That was all the example.')
 
 
 def eb_general_failure(failure):
@@ -374,7 +364,6 @@ add_destinations(EliotTreeDestination(
 def main(reactor):
     d = get_things_done()
     d.addErrback(eb_general_failure)
-    d.addBoth(lambda _: stop())
     return d
 
 

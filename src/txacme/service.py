@@ -12,7 +12,7 @@ from twisted.internet import defer
 from twisted.logger import Logger
 
 from txacme.client import answer_challenge, get_certificate
-from txacme.util import clock_now, generate_private_key
+from txacme.util import clock_now, generate_private_key, tap
 
 
 log = Logger()
@@ -274,9 +274,7 @@ class AcmeIssuingService(Service):
             self._timer_service.clock = self._clock
             self._timer_service.startService()
 
-        deferred = self._client.start(email=self._email)
-        deferred.addCallback(cb_start)
-        return deferred
+        return self._client.start(email=self._email).addCallback(cb_start)
 
     def startService(self):
         """
@@ -285,8 +283,7 @@ class AcmeIssuingService(Service):
         See `when_certs_valid` if you want to be notified when all the
         certificate from the storage were validated after startup.
         """
-        deferred = self.start()
-        deferred.addErrback(self._panic, 'FAIL-TO-START')
+        self.start().addErrback(self._panic, 'FAIL-TO-START')
 
     def stopService(self):
         Service.stopService(self)
@@ -295,9 +292,12 @@ class AcmeIssuingService(Service):
             d.cancel()
         self._waiting = []
 
-        deferred = self._client.stop()
-        deferred.addCallback(lambda _: self._timer_service.stopService())
-        return deferred
+        def stop_timer(ignored):
+            if not self._timer_service:
+                return
+            return self._timer_service.stopService()
+
+        return self._client.stop().addBoth(tap(stop_timer))
 
 
 __all__ = ['AcmeIssuingService']
