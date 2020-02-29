@@ -85,7 +85,7 @@ from acme.messages import (
     STATUS_INVALID,
     )
 
-from josepy import ComparableX509, JSONObjectWithFields
+import josepy as jose
 from josepy.jwa import RS256
 from josepy.errors import DeserializationError
 
@@ -122,7 +122,6 @@ _DEFAULT_TIMEOUT = 40
 
 
 # Borrowed from requests, with modifications.
-
 def _parse_header_links(response):
     """
     Parse the links from a Link: header field.
@@ -182,6 +181,21 @@ def fqdn_identifier(fqdn):
     """
     return messages.Identifier(
         typ=messages.IDENTIFIER_FQDN, value=fqdn)
+
+
+@messages.Directory.register
+class Finalize(jose.JSONObjectWithFields):
+    """
+    ACME order finalize request.
+
+    This is here as acme.messages.CertificateRequest does not work with
+    pebble in --strict mode.
+
+    :ivar josepy.util.ComparableX509 csr:
+        `OpenSSL.crypto.X509Req` wrapped in `.ComparableX509`
+    """
+    resource_type = 'finalize'
+    csr = jose.Field('csr', decoder=jose.decode_csr, encoder=jose.encode_csr)
 
 
 class Client(object):
@@ -261,7 +275,7 @@ class Client(object):
         :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
         uri = self.directory.newAccount
-        new_reg = messages.NewRegistration.from_data(
+        new_reg = messages.Registration.from_data(
             email=email,
             terms_of_service_agreed=True,
             )
@@ -407,7 +421,7 @@ class Client(object):
         Ensure we got one of the expected response codes`.
         """
         if response.code not in codes:
-            return cls._failAndConsume(response, errors.ClientError(
+            return _fail_and_consume(response, errors.ClientError(
                 'Expected {!r} response but got {!r}'.format(
                     codes, response.code)))
         return response
@@ -437,7 +451,7 @@ class Client(object):
             return (
                 DeferredContext(
                     self._client.post(
-                        challenge_body.uri, JSONObjectWithFields()))
+                        challenge_body.uri, jose.JSONObjectWithFields()))
                 .addCallback(self._parse_challenge)
                 .addCallback(self._check_challenge, challenge_body)
                 .addCallback(
@@ -455,7 +469,7 @@ class Client(object):
         try:
             authzr_uri = links['up']['url']
         except KeyError:
-            yield cls._failAndConsume(
+            yield _fail_and_consume(
                 response, errors.ClientError('"up" link missing'))
 
         body = yield response.json()
@@ -519,9 +533,9 @@ class Client(object):
         """
         csr = OpenSSL.crypto.load_certificate_request(
             OpenSSL.crypto.FILETYPE_PEM, order.csr_pem)
+        request = Finalize(csr=jose.ComparableX509(csr))
         response = yield self._client.post(
-            order.body.finalize, obj=messages.CertificateRequest(
-                csr=ComparableX509(csr)))
+            order.body.finalize, obj=request)
         self._expect_response(response, [http.OK])
         body = yield response.json()
         defer.returnValue(messages.OrderResource(
@@ -638,36 +652,37 @@ def answer_challenge(authz, client, responders, clock, timeout=300.0):
 
     :return: A deferred firing when the authorization is verified.
     """
+    server_name = authz.body.identifier.value
     responder, challenge = _find_supported_challenge(authz, responders)
     response = challenge.response(client.key)
     yield defer.maybeDeferred(
-        responder.start_responding, 'ignore', challenge.chall, response)
+        responder.start_responding, server_name, challenge.chall, response)
 
-    response = yield client.answer_challenge(challenge, response)
+    resource = yield client.answer_challenge(challenge, response)
 
     now = clock.seconds()
     sleep = 0.5
     try:
         while True:
-            response = yield client.check_authorization(authz)
-            status = response.body.status
+            resource = yield client.check_authorization(authz)
+            status = resource.body.status
 
             if status == STATUS_INVALID:
                 # No need to wait longer as we got a definitive answer.
-                raise AuthorizationFailed(response)
+                raise AuthorizationFailed(resource)
 
             if status == STATUS_VALID:
                 # All good.
-                defer.returnValue(response)
+                defer.returnValue(resource)
 
             if clock.seconds() - now > timeout:
-                raise AuthorizationFailed(response)
+                raise AuthorizationFailed(resource)
 
             yield deferLater(clock, sleep, lambda: None)
             sleep += sleep
     finally:
         yield defer.maybeDeferred(
-            responder.stop_responding, 'ignore', challenge.chall, 'ignore')
+            responder.stop_responding, server_name, challenge.chall, response)
 
 
 @defer.inlineCallbacks
@@ -882,15 +897,15 @@ class JWSClient(object):
                         messages.Error.from_json(jobj), response)
                 else:
                     # response is not JSON object
-                    return cls._failAndConsume(
+                    return _fail_and_consume(
                         response, errors.ClientError('Response is not JSON.'))
             elif content_type not in response_ct.lower():
-                return cls._failAndConsume(response, errors.ClientError(
+                return _fail_and_consume(response, errors.ClientError(
                     'Unexpected response Content-Type: {0!r}. '
                     'Expecting {1!r}.'.format(
                         response_ct, content_type)))
             elif JSON_CONTENT_TYPE in content_type.lower() and jobj is None:
-                return cls._failAndConsume(
+                return _fail_and_consume(
                     response, errors.ClientError('Missing JSON body.'))
             return response
 
@@ -1019,16 +1034,6 @@ class JWSClient(object):
                 .addCallback(self._check_response, content_type=content_type)
                 .addActionFinish())
 
-    @staticmethod
-    def _failAndConsume(response, error):
-        """
-        Fail the deferred, but before the read all the pending data from the
-        response.
-        """
-        def fail(_):
-            raise error
-        return response.text().addBoth(fail)
-
     def _add_nonce(self, response):
         """
         Store a nonce from a response we received.
@@ -1041,7 +1046,7 @@ class JWSClient(object):
             REPLAY_NONCE_HEADER, [None])[0]
         with LOG_JWS_ADD_NONCE(raw_nonce=nonce) as action:
             if nonce is None:
-                return self._failAndConsume(
+                return _fail_and_consume(
                     response,
                     errors.ClientError(str(errors.MissingNonce(response))),
                     )
@@ -1052,7 +1057,7 @@ class JWSClient(object):
                     )
                     action.add_success_fields(nonce=decoded_nonce)
                 except DeserializationError as error:
-                    return self._failAndConsume(
+                    return _fail_and_consume(
                         response, errors.BadNonce(nonce, error))
                 self._nonces.add(decoded_nonce)
                 return response
@@ -1138,6 +1143,16 @@ class JWSClient(object):
         return (
             self._post(url, obj, content_type, **kwargs)
             .addErrback(retry_bad_nonce))
+
+
+def _fail_and_consume(response, error):
+    """
+    Fail the deferred, but before the read all the pending data from the
+    response.
+    """
+    def fail(_):
+        raise error
+    return response.text().addBoth(fail)
 
 
 __all__ = [
