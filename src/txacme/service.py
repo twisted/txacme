@@ -81,6 +81,9 @@ class AcmeIssuingService(Service):
     ready = False
     # Service used to repeatedly call the certificate check and renewal.
     _timer_service = None
+    # Deferred of the current certificates check.
+    # Added to help the automated testing.
+    _ongoing_check = None
 
     def _now(self):
         """
@@ -140,12 +143,13 @@ class AcmeIssuingService(Service):
                 d.callback(None)
             self._waiting = []
 
-        return (
+        self._ongoing_check = (
             self.cert_store.as_dict()
             .addCallback(check)
             .addErrback(
                 lambda f: log.failure(
                     u'Error in scheduled certificate check.', f)))
+        return self._ongoing_check
 
     def issue_cert(self, server_names):
         """
