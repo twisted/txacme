@@ -316,7 +316,9 @@ class Client(object):
         Get the response from the account registration and see if the
         account is already registered and do an update in that case.
         """
-        if response.code == 200:
+        if response.code == 200 and request.contact:
+            # Account already exists and we email address to update.
+            # I don't know how to remove a contact.
             uri = self._maybe_location(response)
             deferred = self._client.post(uri, request, kid=uri)
             deferred.addCallback(self._cb_parse_registration_response, uri=uri)
