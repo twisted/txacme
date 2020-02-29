@@ -79,6 +79,8 @@ class AcmeIssuingService(Service):
     _waiting = attr.ib(default=attr.Factory(list), init=False)
     _issuing = attr.ib(default=attr.Factory(dict), init=False)
     ready = False
+    # Service used to repeatedly call the certificate check and renewal.
+    _timer_service = None
 
     def _now(self):
         """
@@ -297,7 +299,14 @@ class AcmeIssuingService(Service):
                 return
             return self._timer_service.stopService()
 
-        return self._client.stop().addBoth(tap(stop_timer))
+        def cleanup(ignored):
+            self._timer_service = None
+
+        return (
+            self._client.stop()
+            .addBoth(tap(stop_timer))
+            .addBoth(tap(cleanup))
+            )
 
 
 __all__ = ['AcmeIssuingService']

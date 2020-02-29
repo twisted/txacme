@@ -397,9 +397,9 @@ class Client(object):
         Ensure we got one of the expected response codes`.
         """
         if response.code not in codes:
-            raise errors.ClientError(
+            return cls._failAndConsume(response, errors.ClientError(
                 'Expected {!r} response but got {!r}'.format(
-                    codes, response.code))
+                    codes, response.code)))
         return response
 
     def answer_challenge(self, challenge_body, response):
@@ -445,7 +445,8 @@ class Client(object):
         try:
             authzr_uri = links['up']['url']
         except KeyError:
-            raise errors.ClientError('"up" link missing')
+            yield cls._failAndConsume(
+                response, errors.ClientError('"up" link missing'))
 
         body = yield response.json()
         defer.returnValue(messages.ChallengeResource(
@@ -871,14 +872,16 @@ class JWSClient(object):
                         messages.Error.from_json(jobj), response)
                 else:
                     # response is not JSON object
-                    raise errors.ClientError(response)
+                    return cls._failAndConsume(
+                        response, errors.ClientError('Response is not JSON.'))
             elif content_type not in response_ct.lower():
-                raise errors.ClientError(
+                return cls._failAndConsume(response, errors.ClientError(
                     'Unexpected response Content-Type: {0!r}. '
                     'Expecting {1!r}.'.format(
-                        response_ct, content_type))
+                        response_ct, content_type)))
             elif JSON_CONTENT_TYPE in content_type.lower() and jobj is None:
-                raise errors.ClientError(response)
+                return cls._failAndConsume(
+                    response, errors.ClientError('Missing JSON body.'))
             return response
 
         response_ct = response.headers.getRawHeaders(
@@ -1007,6 +1010,16 @@ class JWSClient(object):
                 .addCallback(self._check_response, content_type=content_type)
                 .addActionFinish())
 
+    @staticmethod
+    def _failAndConsume(response, error):
+        """
+        Fail the deferred, but before the read all the pending data from the
+        response.
+        """
+        def fail(_):
+            raise error
+        return response.text().addBoth(fail)
+
     def _add_nonce(self, response):
         """
         Store a nonce from a response we received.
@@ -1019,7 +1032,10 @@ class JWSClient(object):
             REPLAY_NONCE_HEADER, [None])[0]
         with LOG_JWS_ADD_NONCE(raw_nonce=nonce) as action:
             if nonce is None:
-                raise errors.MissingNonce(response)
+                return self._failAndConsume(
+                    response,
+                    errors.ClientError(str(errors.MissingNonce(response))),
+                    )
             else:
                 try:
                     decoded_nonce = Header._fields['nonce'].decode(
@@ -1027,7 +1043,8 @@ class JWSClient(object):
                     )
                     action.add_success_fields(nonce=decoded_nonce)
                 except DeserializationError as error:
-                    raise errors.BadNonce(nonce, error)
+                    return self._failAndConsume(
+                        response, errors.BadNonce(nonce, error))
                 self._nonces.add(decoded_nonce)
                 return response
 
