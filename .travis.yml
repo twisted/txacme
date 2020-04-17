@@ -1,9 +1,10 @@
 language: python
 sudo: false
 cache: pip
-branches:
-  only:
-  - master
+if: (branch = master) OR (tag IS present)
+stages:
+  - name: deploy
+    if: tag IS present
 matrix:
   include:
   - python: 2.7
@@ -82,9 +83,6 @@ after_success:
 - codecov
 notifications:
   email: false
-stages:
-  - name: deploy
-    if: tag IS present
 deploy:
   provider: pypi
   user: releasebot.txacme
