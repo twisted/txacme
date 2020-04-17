@@ -82,6 +82,9 @@ after_success:
 - codecov
 notifications:
   email: false
+stages:
+  - name: deploy
+    if: tag IS present
 deploy:
   provider: pypi
   user: releasebot.txacme
