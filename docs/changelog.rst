@@ -3,6 +3,21 @@ txacme changelog
 
 .. towncrier release notes start
 
+Txacme 0.9.3 (2020-04-16)
+=========================
+
+Bugfixes
+--------
+
+- Become installable on current versions of attrs again. (#137)
+
+
+Deprecations and Removals
+-------------------------
+
+- INCOMPATIBLE CHANGE: Removed ``txacme.util.key_cryptography_to_pyopenssl`` and ``txacme.util.cert_cryptography_to_pyopenssl`` in favour of using the native PyOpenSSL conversion methods. (#122)
+
+
 Txacme 0.9.2 (2018-01-24)
 =========================
 
