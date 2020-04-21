@@ -51,7 +51,7 @@ setup(
         'josepy',
         'pem>=16.1.0',
         'treq>=15.1.0',
-        'twisted[tls]>=15.5.0',
+        'twisted[tls]>=16.2.0',
         'txsni',
         'pyopenssl>=17.1.0',
         ],
