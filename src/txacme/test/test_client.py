@@ -161,8 +161,7 @@ def _nonce_response(url, nonce):
 
 
 def _json_dumps(j):
-    s = json.dumps(j)
-    return s
+    return json.dumps(j).encode("utf-8")
 
 
 class RequestSequence(treq_RequestSequence):
