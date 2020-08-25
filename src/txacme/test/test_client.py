@@ -29,7 +29,6 @@ from treq.testing import (
 from twisted.internet import reactor
 from twisted.internet.defer import CancelledError, fail, succeed
 from twisted.internet.task import Clock
-from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http
@@ -163,8 +162,6 @@ def _nonce_response(url, nonce):
 
 def _json_dumps(j):
     s = json.dumps(j)
-    if _PY3:
-        s = s.encode('utf-8')
     return s
 
 

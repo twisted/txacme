@@ -14,7 +14,6 @@ from eliot.twisted import DeferredContext
 from twisted.internet import reactor
 from twisted.internet.defer import succeed
 from twisted.internet.endpoints import serverFromString
-from twisted.python.compat import _PY3
 from twisted.python.filepath import FilePath
 from twisted.trial.unittest import TestCase
 from twisted.web.resource import Resource
@@ -162,13 +161,9 @@ def _getenv(name, default=None):
     """
     Sigh.
     """
-    if not _PY3:
-        name = name.encode('utf-8')
     value = getenv(name)
     if value is None:
         return default
-    if not _PY3:
-        value = value.decode('utf-8')
     return value
 
 
@@ -184,8 +179,6 @@ class LetsEncryptStagingTLSSNI01Tests(ClientTestsMixin, TestCase):
     ENDPOINT = _getenv(u'ACME_ENDPOINT')
     if None in [HOST, ENDPOINT]:
         skip = 'Must provide $ACME_HOST and $ACME_ENDPOINT'
-    elif not _PY3:
-        ENDPOINT = ENDPOINT.encode('utf-8')
 
     def _create_client(self, key):
         return Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
