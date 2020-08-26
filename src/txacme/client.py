@@ -545,16 +545,18 @@ class Client(object):
         :return: The issued certificate.
         """
         csr = OpenSSL.crypto.load_certificate_request(
-            OpenSSL.crypto.FILETYPE_PEM, order.csr_pem)
+            OpenSSL.crypto.FILETYPE_PEM, order.csr_pem
+        )
         request = Finalize(csr=jose.ComparableX509(csr))
         response = yield self._client.post(
-            order.body.finalize, obj=request)
+            order.body.finalize, obj=request
+        )
         self._expect_response(response, [http.OK])
         body = yield response.json()
         defer.returnValue(messages.OrderResource(
             uri=order.uri,
             body=messages.Order.from_json(body),
-            ))
+        ))
 
     @classmethod
     def _parse_certificate(cls, response):

@@ -470,31 +470,5 @@ class AcmeIssuingServiceTests(TestCase):
                 succeeded(
                     Not(Contains(server_name))))
 
-    def test_registration_email(self):
-        """
-        If we give our service an email address, that address will be used as a
-        registration contact.
-        """
-        # First the case with no email given.
-        with AcmeFixture() as fixture:
-            fixture.service.startService()
-            self.assertThat(
-                fixture.service._regr,
-                MatchesStructure(
-                    body=MatchesStructure(
-                        key=Is(None),
-                        contact=Equals(())
-                    )
-                )
-            )
-
-        # Next, we give an email.
-        with AcmeFixture(email=u'example@example.com') as fixture:
-            fixture.service.startService()
-            self.assertThat(fixture.service._regr, MatchesStructure(
-                body=MatchesStructure(
-                    key=Is(None),
-                    contact=Equals((u'mailto:example@example.com',)))))
-
 
 __all__ = ['AcmeIssuingServiceTests']

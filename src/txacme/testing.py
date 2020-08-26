@@ -165,6 +165,7 @@ class FakeClient(object):
         return succeed(self.regr)
 
     def submit_order(self, key, names):
+        self._key = key
         identifiers = [
             messages.Identifier(typ=messages.IDENTIFIER_FQDN, value=name)
             for name in names
@@ -218,24 +219,23 @@ class FakeClient(object):
                     combinations=[[n] for n in range(len(challenges))])),
         )
 
-    def request_issuance(self, csr):
-        csr = csr.csr
-        # TODO: Only in Cryptography 1.3
-        # assert csr.is_signature_valid
+    def finalize(self, order):
+        dns_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, order.identifiers[0].value)])
+        pub_key = self._key.public_key()
         cert = (
             x509.CertificateBuilder()
-            .subject_name(csr.subject)
+            .subject_name(dns_name)
             .issuer_name(self._ca_name)
             .not_valid_before(self._now() - timedelta(seconds=3600))
             .not_valid_after(self._now() + timedelta(days=90))
             .serial_number(int(uuid4()))
-            .public_key(csr.public_key())
+            .public_key(pub_key)
+            # .add_extension(
+            #     csr.extensions.get_extension_for_oid(
+            #         ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value,
+            #     critical=False)
             .add_extension(
-                csr.extensions.get_extension_for_oid(
-                    ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value,
-                critical=False)
-            .add_extension(
-                x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
+                x509.SubjectKeyIdentifier.from_public_key(pub_key),
                 critical=False)
             .add_extension(self._ca_aki, critical=False)
             .sign(
@@ -244,7 +244,14 @@ class FakeClient(object):
                 backend=default_backend()))
         cert_res = messages.CertificateResource(
             body=cert.public_bytes(encoding=serialization.Encoding.DER))
-        return self._controller.issue().addCallback(lambda _: cert_res)
+        return succeed(messages.OrderResource(
+                uri="https://example.com/what",
+                body=order,
+            ))
+        return (
+            self._controller.issue()
+            .addCallback(lambda _: cert_res)
+        )
 
     def fetch_chain(self, certr, max_length=10):
         return succeed([
