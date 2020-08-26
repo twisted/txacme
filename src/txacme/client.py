@@ -1096,8 +1096,6 @@ class JWSClient(object):
                     .encode())
                 return result
 
-        print("_posting", url)
-
         with LOG_JWS_POST().context():
             headers = kwargs.setdefault('headers', Headers())
             headers.setRawHeaders(b'content-type', [JOSE_CONTENT_TYPE])
