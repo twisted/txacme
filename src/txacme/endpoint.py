@@ -18,7 +18,6 @@ from twisted.python.filepath import FilePath
 from txsni.snimap import HostDirectoryMap, SNIMap
 from zope.interface import implementer
 
-from txacme.challenges import TLSSNI01Responder
 from txacme.client import Client, _DEFAULT_TIMEOUT
 from txacme.service import _default_panic, AcmeIssuingService
 from txacme.store import DirectoryStore
@@ -45,8 +44,13 @@ class _WrapperPort(object):
 @attr.s(cmp=False, hash=False)
 class AutoTLSEndpoint(object):
     """
-    A server endpoint that does TLS SNI, with certificates automatically
-    (re)issued from an ACME certificate authority.
+    A server endpoint maintained only for API compatibility.
+
+    Previously a SNI-01 responder, currently unable to issue certificates.
+    When an ALPN-01 responder exists, this will start working again.
+
+    With certificates automatically (re)issued from an ACME certificate
+    authority.
 
     :param reactor: The Twisted reactor.
     :param directory: ``twisted.python.url.URL`` for the ACME directory to use
@@ -54,10 +58,10 @@ class AutoTLSEndpoint(object):
 
     :type client: txacme.client.Client
     :param client: An ACME client used to interact with the server.
+
     :type cert_store: `txacme.interfaces.ICertificateStore`
-    :param cert_store: The certificate
-        store containing the certificates to manage.  For example,
-        `txacme.store.DirectoryStore`.
+    :param cert_store: The certificate store containing the certificates to
+        manage.  For example, `txacme.store.DirectoryStore`.
     :param dict cert_mapping: The certificate mapping to use for SNI; for
         example, ``txsni.snimap.HostDirectoryMap``.  Usually this should
         correspond to the same underlying storage as ``cert_store``.
@@ -100,19 +104,20 @@ class AutoTLSEndpoint(object):
                 cert_store=self.cert_store,
                 client=self.client,
                 clock=self.reactor,
-                responders=[responder],
+                responders=[],
                 check_interval=self.check_interval,
                 reissue_interval=self.reissue_interval,
                 panic_interval=self.panic_interval,
                 panic=self._panic,
-                generate_key=self._generate_key)
+                generate_key=self._generate_key
+            )
             self.service.startService()
             return (
                 self.service.when_certs_valid()
                 .addCallback(
-                    lambda _: _WrapperPort(port=port, service=self.service)))
+                    lambda _: _WrapperPort(port=port, service=self.service))
+            )
 
-        responder = TLSSNI01Responder()
         sni_map = SNIMap(responder.wrap_host_map(self.cert_mapping))
         return (
             maybeDeferred(
@@ -121,7 +126,8 @@ class AutoTLSEndpoint(object):
                     contextFactory=sni_map,
                     isClient=False,
                     wrappedFactory=protocolFactory))
-            .addCallback(_got_port))
+            .addCallback(_got_port)
+        )
 
 
 def load_or_create_client_key(pem_path):

@@ -89,7 +89,7 @@ class FakeClient(object):
     Provides the same API as `~txacme.client.Client`, but performs no network
     operations and issues certificates signed by its own fake CA.
     """
-    _challenge_types = [challenges.TLSSNI01]
+    _challenge_types = [challenges.HTTP01]
 
     def __init__(self, key, clock, ca_key=None, controller=None):
         self.key = key
