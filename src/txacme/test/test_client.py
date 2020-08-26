@@ -15,24 +15,25 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fixtures import Fixture
 from hypothesis import strategies as s
-from hypothesis import assume, example, given
+from hypothesis import assume, example, given, settings
 from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
     MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure, Mismatch,
-    Never, Not, StartsWith)
-from testtools.twistedsupport import failed, succeeded
+    Never, Not, StartsWith, HasLength)
+from testtools.twistedsupport import failed, succeeded, has_no_result
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
     _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import CancelledError, fail, succeed
+from twisted.internet.defer import Deferred, CancelledError, fail, succeed
+from twisted.internet.error import ConnectionClosed
 from twisted.internet.task import Clock
-from twisted.python.compat import _PY3
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
-from twisted.web import http
+from twisted.web import http, server
+from twisted.web.resource import Resource
 from twisted.web.http_headers import Headers
 from zope.interface import implementer
 
@@ -104,13 +105,43 @@ class Nearly(object):
                     value, self.epsilon, self.expected))
 
 
+@attr.s(auto_attribs=True)
+class ConnectionPoolFixture:
+    _deferred: Deferred = attr.Factory(Deferred)
+    _closing: bool = False
+
+    def started_closing(self):
+        return self._closing
+
+    def finish_closing(self):
+        self._deferred.callback(None)
+
+
+@attr.s(auto_attribs=True)
+class FakePool:
+    _fixture_pool: ConnectionPoolFixture
+
+    def closeCachedConnections(self):
+        self._fixture_pool._closing = True
+        return self._fixture_pool._deferred
+
+
 class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, key=None, alg=RS256):
+    def __init__(self, sequence, key=None, alg=RS256, use_connection_pool=False):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
+        if isinstance(sequence, treq_RequestSequence):
+            self._agent = RequestTraversalAgent(
+                StringStubbingResource(self._sequence)
+            )
+        else:
+            self._agent = RequestTraversalAgent(sequence)
+        if use_connection_pool:
+            self.pool = ConnectionPoolFixture()
+            self._agent._pool = FakePool(self.pool)
         self._directory = messages.Directory({
             messages.NewRegistration:
             u'https://example.org/acme/new-reg',
@@ -127,14 +158,15 @@ class ClientFixture(Fixture):
         self._alg = alg
 
     def _setUp(self):  # noqa
-        agent = RequestTraversalAgent(
-            StringStubbingResource(self._sequence))
-        jws_client = JWSClient(agent, self._key, self._alg)
+        jws_client = JWSClient(self._agent, self._key, self._alg)
         jws_client._treq._data_to_body_producer = _SynchronousProducer
         self.clock = Clock()
         self.client = Client(
             self._directory, self.clock, self._key,
             jws_client=jws_client)
+
+    def flush(self):
+        self._agent.flush()
 
 
 def _nonce_response(url, nonce):
@@ -162,10 +194,7 @@ def _nonce_response(url, nonce):
 
 
 def _json_dumps(j):
-    s = json.dumps(j)
-    if _PY3:
-        s = s.encode('utf-8')
-    return s
+    return json.dumps(j).encode("utf-8")
 
 
 class RequestSequence(treq_RequestSequence):
@@ -344,7 +373,52 @@ class ClientTests(TestCase):
             self.assertThat(
                 client.register(reg2),
                 failed_with(IsInstance(errors.UnexpectedUpdate)))
-        succeeded(client.stop())
+        self.expectThat(client.stop(), succeeded(Equals(None)))
+
+    def stop_in_progress(self, use_pool=False):
+        requested = []
+
+        class NoAnswerResource(Resource):
+            isLeaf = True       # noqa
+
+            def render(self, request):
+                requested.append(request.notifyFinish())
+                return server.NOT_DONE_YET
+
+        self.client_fixture = self.useFixture(
+            ClientFixture(NoAnswerResource(), key=RSA_KEY_512, use_connection_pool=use_pool)
+        )
+        client = self.client_fixture.client
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        register_call = client.register(reg)
+        self.expectThat(requested, HasLength(1))
+        self.expectThat(register_call, has_no_result())
+        self.expectThat(requested[0], has_no_result())
+        stop_deferred = client.stop()
+        self.assertThat(register_call, succeeded(Equals(None)))
+        self.client_fixture.flush()
+        self.assertThat(
+            requested[0],
+            failed_with(IsInstance(ConnectionClosed)),
+        )
+        return stop_deferred
+
+    def test_stop_in_progress(self):
+        """
+        If we stop the client while an operation is in progress, it's
+        cancelled.
+        """
+        self.assertThat(self.stop_in_progress(), succeeded(Equals(None)))
+
+    def test_stop_in_progress_with_pool(self):
+        """
+        If we stop the client while an operation is in progress, it will stop.
+        """
+        stopped = self.stop_in_progress(True)
+        self.assertThat(stopped, has_no_result())
+        self.assertThat(self.client_fixture.pool.started_closing(), Equals(True))
+        self.client_fixture.pool.finish_closing()
+        self.assertThat(stopped, succeeded(Equals(None)))
 
     def test_register(self):
         """
@@ -939,7 +1013,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'http-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1173,9 +1246,6 @@ class ClientTests(TestCase):
         recorded_challenges = set()
         responder = RecordingResponder(recorded_challenges, u'tls-sni-01')
         uri = u'https://example.org/acme/authz/1/1'
-        key_authorization = (
-            u'IlirfxKKXAsHtmzK29Pj8A.Ki7_6NT4Ym'
-            u'QF6lXqTKx4OOF7ECC4Jf1F080BGhHQbe0')
         challb = messages.ChallengeBody.from_json({
             u'uri': uri,
             u'token': u'IlirfxKKXAsHtmzK29Pj8A',
@@ -1201,7 +1271,6 @@ class ClientTests(TestCase):
                  on_jws(Equals({
                      u'resource': u'challenge',
                      u'type': u'tls-sni-01',
-                     u'keyAuthorization': key_authorization,
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1463,6 +1532,7 @@ class ClientTests(TestCase):
             in cert_urls
             ], self.expectThat)
 
+    @settings(deadline=None)
     @example([u'http://example.com/1', u'http://example.com/2'])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),
@@ -1488,6 +1558,7 @@ class ClientTests(TestCase):
                             cert_chain_uri=Equals(issuer_url))
                         for url, issuer_url in urls])))
 
+    @settings(deadline=None)
     @example([u'http://example.com/{}'.format(n) for n in range(20)])
     @given(s.lists(s.integers()
                    .map(lambda n: u'http://example.com/{}'.format(n)),

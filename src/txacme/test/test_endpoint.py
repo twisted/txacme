@@ -7,7 +7,7 @@ from josepy.jwk import JWKRSA
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fixtures import TempDir
-from testtools import ExpectedException
+from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     Always, Equals, Is, IsInstance, MatchesAll, MatchesPredicate,
     MatchesStructure)
@@ -21,6 +21,7 @@ from twisted.plugin import IPlugin
 from twisted.plugins import txacme_endpoint
 from twisted.python.filepath import FilePath
 from twisted.python.url import URL
+from twisted.test.proto_helpers import MemoryReactorClock
 from txsni.snimap import HostDirectoryMap
 from zope.interface import implementer
 from zope.interface.verify import verifyObject
@@ -49,6 +50,21 @@ class DummyEndpoint(object):
     """
     def listen(self, factory):
         return succeed(DummyPort())
+
+
+class TXAcmeTestCaseTestCase(TestCase):
+    def test_tear_down(self):
+        from twisted.internet import reactor
+        garbage_delayed_call = reactor.callLater(1.0, lambda: None)
+
+        class TestTest(TXACMETestCase):
+            def test_test(self):
+                pass
+
+        test_case_under_test = TestTest("test_test")
+        self.assertRaises(AssertionError, test_case_under_test.tearDown)
+        self.assertThat(garbage_delayed_call.active(), Equals(False))
+        self.assertThat(reactor.getDelayedCalls(), Equals([]))
 
 
 class EndpointTests(TXACMETestCase):
@@ -151,7 +167,7 @@ class PluginTests(TXACMETestCase):
         tempdir = self.useFixture(TempDir()).path
         temp_path = FilePath(tempdir)
         key_path = temp_path.child('client.key')
-        reactor = object()
+        reactor = MemoryReactorClock()
         self.assertThat(
             parser.parseStreamServer(
                 reactor, tempdir, 'tcp', '443', timeout=0),
@@ -176,8 +192,11 @@ class PluginTests(TXACMETestCase):
 
         # Multiple instances with certificates from the same local directory,
         # will serve the same certificates.
-        parser.parseStreamServer(reactor, tempdir, 'tcp', '443'),
+        parser.parseStreamServer(reactor, tempdir, 'tcp', '443', timeout=0)
         self.assertThat(key_path.getContent(), Equals(key_data))
+
+        # Check that reactor is clean.
+        self.assertEquals(0, len(reactor.getDelayedCalls()))
 
 
 class LoadClientKeyTests(TXACMETestCase):

@@ -222,7 +222,7 @@ class Client(object):
         """
         Construct a client from an ACME directory at a given URL.
 
-        At construct time, it validates that `url` is a valid ACME directory.
+        At construct time, it validates the ACME directory.
 
         :param url: The ``twisted.python.url.URL`` to fetch the directory from.
             See `txacme.urls` for constants for various well-known public
@@ -254,12 +254,10 @@ class Client(object):
 
     def start(self, email=None):
         """
-        Create a new registration with the ACME server or update
-        an existing account.
+        Create a new registration with the ACME server or update an existing
+        account.
 
-        It should be called before doing any ACME requests.
-
-        :param str: Comma separated contact emails used by the account.
+        :param str email: Comma separated contact emails used by the account.
 
         :return: The registration resource.
         :rtype: Deferred[`~acme.messages.RegistrationResource`]
@@ -268,7 +266,7 @@ class Client(object):
         new_reg = messages.Registration.from_data(
             email=email,
             terms_of_service_agreed=True,
-            )
+        )
         action = LOG_ACME_REGISTER(registration=new_reg)
         with action.context():
             return (
@@ -981,10 +979,9 @@ class JWSClient(object):
 
         This cancels pending operations and does cleanup.
 
-        :return: When operation is done.
-        :rtype: Deferred[None]
+        :return: A deferred which fires when the client is stopped.
         """
-        if self._current_request and not self._current_request.called:
+        if self._current_request is not None:
             self._current_request.addErrback(lambda _: None)
             self._current_request.cancel()
             self._current_request = None

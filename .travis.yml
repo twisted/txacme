@@ -1,63 +1,39 @@
 language: python
 sudo: false
 cache: pip
-branches:
-  only:
-    - master
-
+if: (branch = master) OR (tag IS present)
+stages:
+  - name: deploy
+    if: tag IS present
 matrix:
   include:
-  - python: 2.7
-    env: TOXENV=py27-twlatest-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twlatest-alldeps
-  - python: 3.5
-    env: TOXENV=py35-twlatest-alldeps
+  - python: 3.6
+    env: TOXENV=py36-twlatest
   - python: 3.6
     env: TOXENV=py36-twlatest-alldeps
   - python: 3.7
     env: TOXENV=py37-twlatest-alldeps
     dist: xenial
-    sudo: true
-  - python: pypy
-    env: TOXENV=pypy-twlatest-alldeps PYENV_VERSION=pypy2.7-6.0.0
-  - python: pypy
-    env: TOXENV=pypy3-twlatest-alldeps PYENV_VERSION=pypy3.5-6.0.0
-  - python: 2.7
-    env: TOXENV=py27-twtrunk-acmaster-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twtrunk-acmaster-alldeps
-  - python: 3.5
-    env: TOXENV=py35-twtrunk-acmaster-alldeps
+  - python: pypy3.6-7.2.0
+    dist: bionic
+    env: TOXENV=pypy3-twlatest-alldeps
   - python: 3.6
     env: TOXENV=py36-twtrunk-acmaster-alldeps
   - python: 3.7
     env: TOXENV=py37-twtrunk-acmaster-alldeps
     dist: xenial
-    sudo: true
-  - python: pypy
-    env: TOXENV=pypy-twtrunk-acmaster-alldeps PYENV_VERSION=pypy2.7-6.0.0
-  - python: pypy
-    env: TOXENV=pypy3-twtrunk-acmaster-alldeps PYENV_VERSION=pypy3.5-6.0.0
-  - python: 2.7
-    env: TOXENV=py27-twlowest-alldeps
-  - python: 3.4
-    env: TOXENV=py34-twlowest-alldeps
-  - python: 3.5
-    env: TOXENV=py35-twlowest-alldeps
+  - python: pypy3.6-7.2.0
+    dist: bionic
+    env: TOXENV=pypy3-twtrunk-acmaster-alldeps
   - python: 3.6
     env: TOXENV=py36-twlowest-alldeps
   - python: 3.7
     env: TOXENV=py37-twlowest-alldeps
     dist: xenial
-    sudo: true
-  - python: pypy
-    env: TOXENV=pypy-twlowest-alldeps PYENV_VERSION=pypy2.7-6.0.0
-  - python: pypy
-    env: TOXENV=pypy3-twlowest-alldeps PYENV_VERSION=pypy3.5-6.0.0
-  - python: 2.7
-    env: TOXENV=py27-twlatest
-  - python: 2.7
+  - python: pypy3.6-7.2.0
+    dist: bionic
+    env: TOXENV=pypy3-twlowest-alldeps
+  - python: 3.7
     env: TOXENV=docs
     addons:
       apt:
@@ -66,36 +42,30 @@ matrix:
   - python: 3.6
     env: TOXENV=flake8
   allow_failures:
-  - env: TOXENV=py27-twtrunk-acmaster-alldeps
-  - env: TOXENV=py34-twtrunk-acmaster-alldeps
-  - env: TOXENV=py35-twtrunk-acmaster-alldeps
   - env: TOXENV=py36-twtrunk-acmaster-alldeps
   - env: TOXENV=py37-twtrunk-acmaster-alldeps
-  - env: TOXENV=pypy-twtrunk-acmaster-alldeps
   - env: TOXENV=pypy3-twtrunk-acmaster-alldeps
 install:
   # Upgrade packaging tools separately, so that other installations are
   # performed with the upgraded tools.
-  - pip install -U pip setuptools wheel
-  - pip install tox codecov
-  - |
-    if [ -n "$PYENV_VERSION" ]; then
-      git clone --depth 1 https://github.com/yyuu/pyenv.git ~/.pyenv
-      PYENV_ROOT="$HOME/.pyenv"
-      PATH="$PYENV_ROOT/bin:$PATH"
-      eval "$(pyenv init -)"
-      pyenv install "$PYENV_VERSION"
-      pyenv global "$PYENV_VERSION"
-    fi
-
+- pip install -U pip setuptools wheel
+- pip install tox codecov
 script:
-  - tox
-
+- tox
 after_success:
   # Codecov needs combined coverage, and having the raw report in the test
   # output can be useful.
-  - tox -e coverage-report
-  - codecov
-
+- tox -e coverage-report
+- codecov
 notifications:
   email: false
+deploy:
+  provider: pypi
+  user: releasebot.txacme
+  distributions: sdist bdist_wheel
+  on:
+    tags: true
+    condition: "$TOXENV = py37-twlatest-alldeps"
+    all_branches: true
+  password:
+    secure: VLwvRgwwOHp6+8huOdReN8Z6OgiLtyTCGRl82mujlr+rHxSGiUfZrOXKLLVaRhKW3UpMw1Yi4F9KDWBqrbdjn5kAdbgwDrp5s1xnrxX2CeC7BP17fkW37mnY6+BqqJQzhpoiqLFgqS77es6QONosFhxrpu8PqbSlQjy5Ar/OR2NzVd9+/2uEjxw+CKGhI1WSOop7XBnFZ7b4Gjtlcw//lpzed3iOTSDLmK94m617DvhzfJEGH3a2XmkRvLbPsFD5t0KzWwC0AABDaXr7zb6DWP4lPs94x7ZDATpFHruU3m8Zsp0MKl0xIPDdcTPvAWcIpUkJ9da5VeMl049O17l1Hi+NMeAa3UsuRAch5Rp6KOOeTasZWlnk9dgse+Wu6NHCaUJx6VF/qyYkuxTEG8+9LkXeKEYVfjS+TOgKGydd6hc9jLm4U86i3fxNVcw91Ch59TljeWXRr21/ClPrJbFNcDKIBbYu4Lnpzac42w3Gle41zLmSkCvD3zbUJuNxphuOgTDd4+DnOXxmuVE1wvVUVTyVrSxzjc7L9BD5DDaw3QEy3N0az8LBp+OMOJyoRetw2sH7DTioi/7TQLFHxaV7Znv+mbJR8X/7NaNqEQSelm1rD/4PgBlcDoG1Q4Xfc42wj4RsCMxBB3ST7qhGdvD/oa8Zr/GyXwkhzGFhrXtdoio=

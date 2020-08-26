@@ -52,11 +52,8 @@ class AutoTLSEndpoint(object):
     :param directory: ``twisted.python.url.URL`` for the ACME directory to use
         for issuing certs.
 
-    :type client_creator: Callable[[reactor, ``twisted.python.url.URL``],
-        Deferred[`txacme.client.Client`]]
-    :param client_creator: A callable called with the reactor and directory URL
-        for creating the ACME client.  For example, ``partial(Client.from_url,
-        key=acme_key, alg=RS256)``.
+    :type client: txacme.client.Client
+    :param client: An ACME client used to interact with the server.
     :type cert_store: `txacme.interfaces.ICertificateStore`
     :param cert_store: The certificate
         store containing the certificates to manage.  For example,
@@ -165,11 +162,7 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     def colon_join(items):
         return ':'.join([item.replace(':', '\\:') for item in items])
 
-    timeout = _DEFAULT_TIMEOUT
-    if 'timeout' in kwargs.keys():
-        timeout = kwargs['timeout']
-        del kwargs['timeout']
-
+    timeout = kwargs.pop('timeout', _DEFAULT_TIMEOUT)
     sub = colon_join(list(args) + ['='.join(item) for item in kwargs.items()])
 
     pem_path = FilePath(pemdir).asTextMode()

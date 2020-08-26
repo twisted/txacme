@@ -51,7 +51,7 @@ setup(
         'josepy',
         'pem>=16.1.0',
         'treq>=15.1.0',
-        'twisted[tls]>=15.5.0',
+        'twisted[tls]>=16.2.0',
         'txsni',
         'pyopenssl>=17.1.0',
         ],
@@ -61,7 +61,7 @@ setup(
         ],
         'test': [
             'fixtures>=1.4.0',
-            'hypothesis==3.20.0',
+            'hypothesis>=4.0.0,<5.0.0',
             'service_identity>=17.0.0',
             'testrepository>=0.0.20',
             'testscenarios',
