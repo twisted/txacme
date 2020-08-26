@@ -205,7 +205,7 @@ class AcmeIssuingService(Service):
 
         log.info(
             'Requesting a certificate for {server_names!r}.',
-            server_name=server_names)
+            server_names=server_names)
         key = self._generate_key()
         objects = [
             pem.Key(key.private_bytes(
