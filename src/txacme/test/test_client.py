@@ -354,11 +354,14 @@ class ClientTests(TestCase):
         cancelled.
         """
         requested = []
+
         class NoAnswerResource(Resource):
-            isLeaf = True
+            isLeaf = True       # noqa
+
             def render(self, request):
                 requested.append(request.notifyFinish())
                 return server.NOT_DONE_YET
+
         fixture = self.useFixture(
             ClientFixture(NoAnswerResource(), key=RSA_KEY_512)
         )
@@ -371,7 +374,10 @@ class ClientTests(TestCase):
         self.assertThat(client.stop(), succeeded(Equals(None)))
         self.assertThat(register_call, succeeded(Equals(None)))
         fixture._agent.flush()
-        self.assertThat(requested[0], failed_with(IsInstance(ConnectionClosed)))
+        self.assertThat(
+            requested[0],
+            failed_with(IsInstance(ConnectionClosed)),
+        )
 
     def test_register(self):
         """
