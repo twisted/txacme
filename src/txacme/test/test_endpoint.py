@@ -7,7 +7,7 @@ from josepy.jwk import JWKRSA
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from fixtures import TempDir
-from testtools import ExpectedException
+from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     Always, Equals, Is, IsInstance, MatchesAll, MatchesPredicate,
     MatchesStructure)
@@ -50,6 +50,21 @@ class DummyEndpoint(object):
     """
     def listen(self, factory):
         return succeed(DummyPort())
+
+
+class TXAcmeTestCaseTestCase(TestCase):
+    def test_tear_down(self):
+        from twisted.internet import reactor
+        garbage_delayed_call = reactor.callLater(1.0, lambda: None)
+
+        class TestTest(TXACMETestCase):
+            def test_test(self):
+                pass
+
+        test_case_under_test = TestTest("test_test")
+        self.assertRaises(AssertionError, test_case_under_test.tearDown)
+        self.assertThat(garbage_delayed_call.active(), Equals(False))
+        self.assertThat(reactor.getDelayedCalls(), Equals([]))
 
 
 class EndpointTests(TXACMETestCase):
