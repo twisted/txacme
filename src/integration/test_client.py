@@ -21,7 +21,6 @@ from twisted.web.server import Site
 from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
 
-from txacme.challenges import TLSSNI01Responder
 from txacme.client import (
     answer_challenge, Client, fqdn_identifier, poll_until_valid)
 from txacme.messages import CertificateRequest
@@ -167,38 +166,6 @@ def _getenv(name, default=None):
     return value
 
 
-class LetsEncryptStagingTLSSNI01Tests(ClientTestsMixin, TestCase):
-    """
-    Tests using the real ACME client against the Let's Encrypt staging
-    environment, and the tls-sni-01 challenge.
-
-    You must set $ACME_HOST to a hostname that will, when connected to on port
-    443, reach a listening socket opened by the tests on $ACME_ENDPOINT.
-    """
-    HOST = _getenv(u'ACME_HOST')
-    ENDPOINT = _getenv(u'ACME_ENDPOINT')
-    if None in [HOST, ENDPOINT]:
-        skip = 'Must provide $ACME_HOST and $ACME_ENDPOINT'
-
-    def _create_client(self, key):
-        return Client.from_url(reactor, LETSENCRYPT_STAGING_DIRECTORY, key=key)
-
-    def _create_responder(self):
-        action = start_action(action_type=u'integration:create_responder')
-        with action.context():
-            responder = TLSSNI01Responder()
-            host_map = responder.wrap_host_map({})
-            site = Site(Resource())
-            endpoint = TLSEndpoint(
-                endpoint=serverFromString(reactor, self.ENDPOINT),
-                contextFactory=SNIMap(host_map))
-            return (
-                DeferredContext(endpoint.listen(site))
-                .addCallback(lambda port: self.addCleanup(port.stopListening))
-                .addCallback(lambda _: responder)
-                .addActionFinish())
-
-
 class LetsEncryptStagingLibcloudTests(ClientTestsMixin, TestCase):
     """
     Tests using the real ACME client against the Let's Encrypt staging
@@ -244,4 +211,4 @@ class FakeClientTests(ClientTestsMixin, TestCase):
         return succeed(NullResponder(u'tls-sni-01'))
 
 
-__all__ = ['LetsEncryptStagingTLSSNI01Tests', 'FakeClientTests']
+__all__ = ['FakeClientTests']

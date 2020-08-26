@@ -1160,103 +1160,18 @@ class ClientTests(TestCase):
                     Nearly(retry_after, 1.0),
                 ])))
 
-    def test_tls_sni_01_no_singleton(self):
-        """
-        If a suitable singleton challenge is not found,
-        `.NoSupportedChallenges` is raised.
-        """
-        challs = [
-            {u'type': u'http-01',
-             u'uri': u'https://example.org/acme/authz/1/0',
-             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
-            {u'type': u'dns',
-             u'uri': u'https://example.org/acme/authz/1/1',
-             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
-            {u'type': u'tls-sni-01',
-             u'uri': u'https://example.org/acme/authz/1/2',
-             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
-            ]
-        combinations = ((0, 2), (1, 2))
-        authzr = messages.AuthorizationResource(
-            body=messages.Authorization(
-                challenges=list(map(
-                    messages.ChallengeBody.from_json,
-                    challs)),
-                combinations=combinations))
-        with ExpectedException(NoSupportedChallenges):
-            _find_supported_challenge(
-                authzr, [NullResponder(challenges.TLSSNI01.typ)])
-
-    def test_no_tls_sni_01(self):
-        """
-        If no tls-sni-01 challenges are available, `.NoSupportedChallenges` is
-        raised.
-        """
-        challs = [
-            {u'type': u'http-01',
-             u'uri': u'https://example.org/acme/authz/1/0',
-             u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
-            {u'type': u'dns',
-             u'uri': u'https://example.org/acme/authz/1/1',
-             u'token': u'DGyRejmCefe7v4NfDGDKfA'},
-            {u'type': u'tls-sni-01',
-             u'uri': u'https://example.org/acme/authz/1/2',
-             u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
-            ]
-        combinations = ((0,), (1,))
-        authzr = messages.AuthorizationResource(
-            body=messages.Authorization(
-                challenges=list(map(
-                    messages.ChallengeBody.from_json,
-                    challs)),
-                combinations=combinations))
-        with ExpectedException(NoSupportedChallenges):
-            _find_supported_challenge(
-                authzr, [NullResponder(challenges.TLSSNI01.typ)])
-
-    def test_only_tls_sni_01(self):
-        """
-        If a singleton tls-sni-01 challenge is available, it is returned.
-        """
-        challs = list(map(
-            messages.ChallengeBody.from_json,
-            [{u'type': u'http-01',
-              u'uri': u'https://example.org/acme/authz/1/0',
-              u'token': u'IlirfxKKXAsHtmzK29Pj8A'},
-             {u'type': u'dns',
-              u'uri': u'https://example.org/acme/authz/1/1',
-              u'token': u'DGyRejmCefe7v4NfDGDKfA'},
-             {u'type': u'tls-sni-01',
-              u'uri': u'https://example.org/acme/authz/1/2',
-              u'token': u'f8IfXqddYr8IJqYHSH6NpA'},
-             ]))
-        combinations = ((0,), (1,), (2,))
-        authzr = messages.AuthorizationResource(
-            body=messages.Authorization(
-                challenges=challs,
-                combinations=combinations))
-        responder = NullResponder(challenges.TLSSNI01.typ)
-        self.assertThat(
-            _find_supported_challenge(authzr, [responder]),
-            MatchesListwise([
-                Is(responder),
-                MatchesAll(
-                    IsInstance(messages.ChallengeBody),
-                    MatchesStructure(
-                        chall=IsInstance(challenges.TLSSNI01)))]))
-
     def test_answer_challenge_function(self):
         """
         The challenge is found in the responder after invoking
         `~txacme.client.answer_challenge`.
         """
         recorded_challenges = set()
-        responder = RecordingResponder(recorded_challenges, u'tls-sni-01')
+        responder = RecordingResponder(recorded_challenges, u'http-01')
         uri = u'https://example.org/acme/authz/1/1'
         challb = messages.ChallengeBody.from_json({
             u'uri': uri,
             u'token': u'IlirfxKKXAsHtmzK29Pj8A',
-            u'type': u'tls-sni-01',
+            u'type': u'http-01',
             u'status': u'pending'})
         identifier_json = {u'type': u'dns',
                            u'value': u'example.com'}
@@ -1277,7 +1192,7 @@ class ClientTests(TestCase):
                  ContainsDict({b'Content-Type': Equals([JSON_CONTENT_TYPE])}),
                  on_jws(Equals({
                      u'resource': u'challenge',
-                     u'type': u'tls-sni-01',
+                     u'type': u'http-01',
                      }))]),
               (http.OK,
                {b'content-type': JSON_CONTENT_TYPE,
@@ -1287,7 +1202,7 @@ class ClientTests(TestCase):
                _json_dumps({
                    u'uri': uri,
                    u'token': u'IlirfxKKXAsHtmzK29Pj8A',
-                   u'type': u'tls-sni-01',
+                   u'type': u'http-01',
                    u'status': u'processing',
                })))],
             self.expectThat)
@@ -1300,7 +1215,7 @@ class ClientTests(TestCase):
             self.assertThat(
                 recorded_challenges,
                 MatchesListwise([
-                    IsInstance(challenges.TLSSNI01)
+                    IsInstance(challenges.HTTP01)
                 ]))
             self.assertThat(
                 stop_responding(),

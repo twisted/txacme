@@ -20,7 +20,7 @@ from twisted.python.url import URL
 from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
-from txacme.challenges import HTTP01Responder, TLSSNI01Responder
+from txacme.challenges import HTTP01Responder
 from txacme.challenges._tls import _MergingMappingProxy
 from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
@@ -75,47 +75,6 @@ class _CommonResponderTests(object):
             response)
         self._do_one_thing()
         self.assertThat(d, succeeded(Always()))
-
-
-class TLSResponderTests(_CommonResponderTests, TestCase):
-    """
-    `.TLSSNI01Responder` is a responder for tls-sni-01 challenges that works
-    with txsni.
-    """
-    _challenge_factory = challenges.TLSSNI01
-    _responder_factory = TLSSNI01Responder
-    _challenge_type = u'tls-sni-01'
-
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
-    @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
-    def test_start_responding(self, token):
-        """
-        Calling ``start_responding`` makes an appropriate entry appear in the
-        host map.
-        """
-        ckey = RSA_KEY_512_RAW
-        challenge = challenges.TLSSNI01(token=token)
-        response = challenge.response(RSA_KEY_512)
-        server_name = response.z_domain.decode('ascii')
-        host_map = {}
-        responder = TLSSNI01Responder()
-        responder._generate_private_key = lambda key_type: ckey
-        wrapped_host_map = responder.wrap_host_map(host_map)
-
-        self.assertThat(wrapped_host_map, Not(Contains(server_name)))
-        responder.start_responding(u'example.com', challenge, response)
-        self.assertThat(
-            wrapped_host_map.get(server_name.encode('utf-8')).certificate,
-            MatchesPredicate(response.verify_cert, '%r does not verify'))
-
-        # Starting twice before stopping doesn't break things
-        responder.start_responding(u'example.com', challenge, response)
-        self.assertThat(
-            wrapped_host_map.get(server_name.encode('utf-8')).certificate,
-            MatchesPredicate(response.verify_cert, '%r does not verify'))
-
-        responder.stop_responding(u'example.com', challenge, response)
-        self.assertThat(wrapped_host_map, Not(Contains(server_name)))
 
 
 class MergingProxyTests(TestCase):

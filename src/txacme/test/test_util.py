@@ -66,41 +66,6 @@ class NotAConnection(object):
         return self._cert
 
 
-class GenerateCertTests(TestCase):
-    """
-    `.generate_tls_sni_01_cert` generates a cert and key suitable for
-    responding for the given challenge SAN.
-    """
-    @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
-    @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
-    def test_cert_verifies(self, token):
-        """
-        The certificates generated verify using
-        ``acme.challenges.TLSSNI01Response.verify_cert``.
-        """
-        ckey = RSA_KEY_512_RAW
-        challenge = challenges.TLSSNI01(token=token)
-        response = challenge.response(RSA_KEY_512)
-        server_name = response.z_domain.decode('ascii')
-        cert, pkey = generate_tls_sni_01_cert(
-            server_name, _generate_private_key=lambda key_type: ckey)
-
-        self.assertThat(cert, ValidForName(server_name))
-
-        ocert = crypto.X509.from_cryptography(cert)
-        self.assertThat(
-            decode(ocert.digest('sha256').replace(b':', b''), 'hex'),
-            Equals(cert.fingerprint(hashes.SHA256())))
-        okey = crypto.PKey.from_cryptography_key(pkey)
-        # TODO: Can we assert more here?
-        self.assertThat(okey.bits(), Equals(pkey.key_size))
-
-        self.assertThat(
-            response.verify_cert(ocert),
-            Equals(True))
-        verify_hostname(NotAConnection(ocert), server_name)
-
-
 class CSRTests(TestCase):
     """
     `~txacme.util.encode_csr` and `~txacme.util.decode_csr` serialize CSRs in
