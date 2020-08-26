@@ -20,8 +20,8 @@ from testtools import ExpectedException, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
     MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure, Mismatch,
-    Never, Not, StartsWith)
-from testtools.twistedsupport import failed, succeeded
+    Never, Not, StartsWith, HasLength)
+from testtools.twistedsupport import failed, succeeded, has_no_result
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
@@ -110,6 +110,12 @@ class ClientFixture(Fixture):
     def __init__(self, sequence, key=None, alg=RS256):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
+        if isinstance(sequence, treq_RequestSequence):
+            self._agent = RequestTraversalAgent(
+                StringStubbingResource(self._sequence)
+            )
+        else:
+            self._agent = RequestTraversalAgent(sequence)
         self._directory = messages.Directory({
             messages.NewRegistration:
             u'https://example.org/acme/new-reg',
@@ -126,9 +132,7 @@ class ClientFixture(Fixture):
         self._alg = alg
 
     def _setUp(self):  # noqa
-        agent = RequestTraversalAgent(
-            StringStubbingResource(self._sequence))
-        jws_client = JWSClient(agent, self._key, self._alg)
+        jws_client = JWSClient(self._agent, self._key, self._alg)
         jws_client._treq._data_to_body_producer = _SynchronousProducer
         self.clock = Clock()
         self.client = Client(
@@ -340,7 +344,37 @@ class ClientTests(TestCase):
             self.assertThat(
                 client.register(reg2),
                 failed_with(IsInstance(errors.UnexpectedUpdate)))
-        succeeded(client.stop())
+        self.expectThat(succeeded(client.stop()))
+
+    def test_stop_in_progress(self):
+        """
+        If we stop the client while an operation is in progress, it's
+        cancelled.
+        """
+        from twisted.internet.defer import Deferred
+        from twisted.web.resource import Resource
+        from twisted.web.server import NOT_DONE_YET
+        from twisted.internet.error import ConnectionClosed
+
+        requested = []
+        class NoAnswerResource(Resource):
+            isLeaf = True
+            def render(self, request):
+                requested.append(request.notifyFinish())
+                return NOT_DONE_YET
+        fixture = self.useFixture(
+            ClientFixture(NoAnswerResource(), key=RSA_KEY_512)
+        )
+        client = fixture.client
+        reg = messages.NewRegistration.from_data(email=u'example@example.com')
+        register_call = client.register(reg)
+        self.expectThat(requested, HasLength(1))
+        self.expectThat(register_call, has_no_result())
+        self.expectThat(requested[0], has_no_result())
+        self.assertThat(client.stop(), succeeded(Equals(None)))
+        self.assertThat(register_call, succeeded(Equals(None)))
+        fixture._agent.flush()
+        self.assertThat(requested[0], failed_with(IsInstance(ConnectionClosed)))
 
     def test_register(self):
         """

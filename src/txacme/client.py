@@ -811,7 +811,7 @@ class JWSClient(object):
 
         :return: A deferred which fires when the client is stopped.
         """
-        if self._current_request and not self._current_request.called:
+        if self._current_request is not None:
             self._current_request.addErrback(lambda _: None)
             self._current_request.cancel()
             self._current_request = None
