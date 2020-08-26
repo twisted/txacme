@@ -1197,10 +1197,11 @@ class ClientTests(TestCase):
                    u'status': u'processing',
                })))],
             self.expectThat)
-        client = self.useFixture(
-            ClientFixture(sequence, key=RSA_KEY_512)).client
+        fixture = self.useFixture(
+            ClientFixture(sequence, key=RSA_KEY_512))
+        client = fixture.client
         with sequence.consume(self.fail):
-            d = answer_challenge(authzr, client, [responder])
+            d = answer_challenge(authzr, client, [responder], fixture.clock)
             self.assertThat(d, succeeded(Always()))
             stop_responding = d.result
             self.assertThat(
@@ -1210,7 +1211,8 @@ class ClientTests(TestCase):
                 ]))
             self.assertThat(
                 stop_responding(),
-                succeeded(Always()))
+                succeeded(Always()),
+            )
             self.assertThat(recorded_challenges, Equals(set()))
 
     def _make_poll_response(self, uri, identifier_json):
@@ -1249,7 +1251,7 @@ class ClientTests(TestCase):
     @given(name=ts.dns_names())
     def test_poll_timeout(self, name):
         """
-        If the timeout is exceeded during polling, `.poll_until_valid` will
+        If the timeout is exceeded during polling, `.get_certificate` will
         fail with ``CancelledError``.
         """
         identifier_json = {u'type': u'dns', u'value': name}
@@ -1303,7 +1305,7 @@ class ClientTests(TestCase):
     def test_poll_invalid(self, name):
         """
         If the authorization enters an invalid state while polling,
-        `.poll_until_valid` will fail with `.AuthorizationFailed`.
+        `.get_certificate` will fail with `.AuthorizationFailed`.
         """
         identifier_json = {u'type': u'dns', u'value': name}
         uri = u'https://example.org/acme/authz/1'
@@ -1330,7 +1332,7 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(authzr, clock, client, timeout=14.)
+            d = get_certificate(authzr, clock, client, timeout=14.)
             clock.pump([5, 5])
             self.assertThat(
                 d,
@@ -1352,7 +1354,7 @@ class ClientTests(TestCase):
     def test_poll_valid(self, name):
         """
         If the authorization enters a valid state while polling,
-        `.poll_until_valid` will fire with the updated authorization.
+        `.get_certificate` will fire with the updated authorization.
         """
         identifier_json = {u'type': u'dns', u'value': name}
         uri = u'https://example.org/acme/authz/1'
@@ -1377,7 +1379,7 @@ class ClientTests(TestCase):
         client = self.useFixture(
             ClientFixture(sequence, key=RSA_KEY_512)).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(authzr, clock, client, timeout=14.)
+            d = get_certificate(authzr, clock, client, timeout=14.)
             clock.pump([5, 5])
             self.assertThat(
                 d,
