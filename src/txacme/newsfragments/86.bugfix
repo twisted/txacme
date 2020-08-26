@@ -1,0 +1,4 @@
+INCOMPATIBLE CHANGE: txacme.service.AcmeIssuingService.stopFactory now
+closes the persisted HTTP client connections.
+This is done to bring the in a state similar to the one before calling
+startFactory.

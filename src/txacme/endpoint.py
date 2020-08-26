@@ -52,11 +52,8 @@ class AutoTLSEndpoint(object):
     :param directory: ``twisted.python.url.URL`` for the ACME directory to use
         for issuing certs.
 
-    :type client_creator: Callable[[reactor, ``twisted.python.url.URL``],
-        Deferred[`txacme.client.Client`]]
-    :param client_creator: A callable called with the reactor and directory URL
-        for creating the ACME client.  For example, ``partial(Client.from_url,
-        key=acme_key, alg=RS256)``.
+    :type client: txacme.client.Client
+    :param client: An ACME client used to interact with the server.
     :type cert_store: `txacme.interfaces.ICertificateStore`
     :param cert_store: The certificate
         store containing the certificates to manage.  For example,
@@ -84,7 +81,7 @@ class AutoTLSEndpoint(object):
     reactor = attr.ib()
     directory = attr.ib(
         validator=lambda inst, a, value: check_directory_url_type(value))
-    client_creator = attr.ib()
+    client = attr.ib()
     cert_store = attr.ib()
     cert_mapping = attr.ib()
     sub_endpoint = attr.ib()
@@ -101,8 +98,7 @@ class AutoTLSEndpoint(object):
         def _got_port(port):
             self.service = AcmeIssuingService(
                 cert_store=self.cert_store,
-                client_creator=partial(
-                    self.client_creator, self.reactor, self.directory),
+                client=self.client,
                 clock=self.reactor,
                 responders=[responder],
                 check_interval=self.check_interval,
@@ -174,8 +170,8 @@ def _parse(reactor, directory, pemdir, *args, **kwargs):
     return AutoTLSEndpoint(
         reactor=reactor,
         directory=directory,
-        client_creator=partial(
-            Client.from_url, key=acme_key, alg=RS256, timeout=timeout),
+        client=Client.from_url(
+            reactor, directory, key=acme_key, alg=RS256, timeout=timeout),
         cert_store=DirectoryStore(pem_path),
         cert_mapping=HostDirectoryMap(pem_path),
         sub_endpoint=serverFromString(reactor, sub))

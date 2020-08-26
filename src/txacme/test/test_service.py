@@ -19,7 +19,7 @@ from testtools.matchers import (
 from testtools.twistedsupport import (
     AsynchronousDeferredRunTest, failed, flush_logged_errors,
     has_no_result, succeeded)
-from twisted.internet.defer import CancelledError, Deferred, fail, succeed
+from twisted.internet.defer import CancelledError, Deferred, fail
 from twisted.internet.task import Clock
 from twisted.python.failure import Failure
 
@@ -96,7 +96,8 @@ class FailingClient(object):
     Test client that always fails.
     """
     def __getattr__(self, name):
-        return lambda *a, **kw: fail(RuntimeError('Tried to do something'))
+        return lambda *a, **kw: fail(
+            RuntimeError('Failing at "%s".' % (name,)))
 
 
 class AcmeFixture(Fixture):
@@ -128,7 +129,7 @@ class AcmeFixture(Fixture):
         self.responder = RecordingResponder(set(), u'tls-sni-01')
         args = dict(
             cert_store=self.cert_store,
-            client_creator=lambda: succeed(acme_client),
+            client=acme_client,
             clock=self.clock,
             responders=[self.responder],
             email=self._email,
@@ -332,11 +333,30 @@ class AcmeIssuingServiceTests(TestCase):
         error should be caught and logged.
         """
         with AcmeFixture(client=FailingClient()) as fixture:
+            # Registration is triggered with service starts.
             fixture.service.startService()
+            latest_logs = flush_logged_errors()
+            self.assertThat(latest_logs, HasLength(1))
+            self.assertThat(
+                str(latest_logs[0]), Contains('Failing at "register".'))
+
+            # Forcing a check will trigger again the registration.
             self.assertThat(
                 fixture.service._check_certs(),
                 succeeded(Always()))
-            self.assertThat(flush_logged_errors(), HasLength(2))
+
+            latest_logs = flush_logged_errors()
+            self.assertThat(latest_logs, HasLength(1))
+            self.assertThat(
+                str(latest_logs[0]), Contains('Failing at "register".'))
+
+            # Manually stop the service to not stop it from the fixture
+            # and trigger another failure.
+            self.assertThat(
+                fixture.service.stopService(),
+                failed(AfterPreprocessing(
+                    lambda f: f.value.args[0], Equals('Failing at "stop".'))))
+            latest_logs = flush_logged_errors()
 
     def test_starting_stopping_cancellation(self):
         """

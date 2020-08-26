@@ -11,12 +11,32 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtensionOID, NameOID
+from testtools import TestCase
+from twisted.internet import reactor
 from twisted.internet.defer import Deferred, fail, succeed
 from twisted.python.compat import unicode
 from zope.interface import implementer
 
 from txacme.interfaces import ICertificateStore, IResponder
 from txacme.util import clock_now, generate_private_key
+
+
+class TXACMETestCase(TestCase):
+    """
+    Common code for all tests for the txacme project.
+    """
+
+    def tearDown(self):
+        super(TXACMETestCase, self).tearDown()
+
+        # Make sure the main reactor is clean after each test.
+        junk = []
+        for delayed_call in reactor.getDelayedCalls():
+            junk.append(delayed_call.func)
+            delayed_call.cancel()
+        if junk:
+            raise AssertionError(
+                'Reactor is not clean. DelayedCalls: %s' % (junk,))
 
 
 @attr.s
@@ -121,6 +141,13 @@ class FakeClient(object):
                 backend=default_backend()))
         self._ca_aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(
             self._ca_key.public_key())
+
+    def stop(self):
+        """
+        Called to stop the client and trigger cleanups.
+        """
+        # Nothing to stop as reactor is not spun.
+        return succeed(None)
 
     def register(self, new_reg=None):
         self._registered = True

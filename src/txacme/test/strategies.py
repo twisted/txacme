@@ -1,10 +1,7 @@
 """
 Miscellaneous strategies for Hypothesis testing.
 """
-try:
-    from base64 import encodebytes
-except ImportError:
-    from base64 import encodestring as encodebytes
+from base64 import encodebytes
 
 from hypothesis import strategies as s
 from pem import Certificate, RSAPrivateKey
