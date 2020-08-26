@@ -28,10 +28,12 @@ from treq.testing import (
     _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import reactor
 from twisted.internet.defer import CancelledError, fail, succeed
+from twisted.internet.error import ConnectionClosed
 from twisted.internet.task import Clock
 from twisted.python.url import URL
 from twisted.test.proto_helpers import MemoryReactor
-from twisted.web import http
+from twisted.web import http, server
+from twisted.web.resource import Resource
 from twisted.web.http_headers import Headers
 from zope.interface import implementer
 
@@ -351,17 +353,12 @@ class ClientTests(TestCase):
         If we stop the client while an operation is in progress, it's
         cancelled.
         """
-        from twisted.internet.defer import Deferred
-        from twisted.web.resource import Resource
-        from twisted.web.server import NOT_DONE_YET
-        from twisted.internet.error import ConnectionClosed
-
         requested = []
         class NoAnswerResource(Resource):
             isLeaf = True
             def render(self, request):
                 requested.append(request.notifyFinish())
-                return NOT_DONE_YET
+                return server.NOT_DONE_YET
         fixture = self.useFixture(
             ClientFixture(NoAnswerResource(), key=RSA_KEY_512)
         )
