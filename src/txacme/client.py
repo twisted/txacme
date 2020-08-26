@@ -367,9 +367,9 @@ class Client(object):
         It will automatically create a new private key and CSR for the
         domain 'names'.
 
+        :param key: Key for the future certificate.
         :param list of str names: Sequence of DNS names for which to request
             a new certificate.
-        :param key: Key for the future certificate.
 
         :return: The new authorization resource.
         :rtype: Deferred[`~acme.messages.Order`]

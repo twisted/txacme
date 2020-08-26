@@ -224,7 +224,7 @@ class AcmeIssuingService(Service):
                     self._client,
                     self._responders,
                     clock=self._clock,
-                    )
+                )
             certificate = yield get_certificate(
                 orderr, self._client, clock=self._clock)
             defer.returnValue(certificate)

@@ -1,5 +1,7 @@
 """
-``tls-sni-01`` challenge implementation.
+TLS challenge implementations.
+
+Formerly tls-sni-01, hopefully tls-alpn-01 at some point in the future.
 """
 from collections import Mapping
 

@@ -149,14 +149,12 @@ class FakeClient(object):
         # Nothing to stop as reactor is not spun.
         return succeed(None)
 
-    def register(self, new_reg=None):
+    def start(self, email=None):
         self._registered = True
-        if new_reg is None:
-            new_reg = messages.NewRegistration()
+        body = messages.Registration.from_data(email=email, terms_of_service_agreed=True)
         self.regr = messages.RegistrationResource(
-            body=messages.Registration(
-                contact=new_reg.contact,
-                agreement=new_reg.agreement))
+            body=body
+        )
         return succeed(self.regr)
 
     def agree_to_tos(self, regr):
@@ -166,24 +164,37 @@ class FakeClient(object):
                 agreement=regr.terms_of_service))
         return succeed(self.regr)
 
-    def request_challenges(self, identifier):
-        self._authorizations[identifier] = challenges = OrderedDict()
-        for chall_type in self._challenge_types:
-            uuid = unicode(uuid4())
-            challb = messages.ChallengeBody(
-                chall=chall_type(token=b'token'),
-                uri=uuid,
-                status=messages.STATUS_PENDING)
-            challenges[chall_type] = uuid
-            self._challenges[uuid] = challb
+    def submit_order(self, key, names):
+        identifiers = [
+            messages.Identifier(typ=messages.IDENTIFIER_FQDN, value=name)
+            for name in names
+        ]
+        for identifier in identifiers:
+            self._authorizations[identifier] = challenges = OrderedDict()
+            for chall_type in self._challenge_types:
+                uuid = unicode(uuid4())
+                challb = messages.ChallengeBody(
+                    chall=chall_type(token=b'token'),
+                    uri=uuid,
+                    status=messages.STATUS_PENDING
+                )
+                challenges[chall_type] = uuid
+                self._challenges[uuid] = challb
         return succeed(
-            messages.AuthorizationResource(
-                body=messages.Authorization(
-                    identifier=identifier,
-                    status=messages.STATUS_PENDING,
-                    challenges=[
-                        self._challenges[u] for u in challenges.values()],
-                    combinations=[[n] for n in range(len(challenges))])))
+            messages.Order(
+                identifiers=identifiers,
+                authorizations=[
+                    messages.AuthorizationResource(
+                        body=messages.Authorization(
+                            identifier=identifier,
+                            status=messages.STATUS_PENDING,
+                            challenges=[self._challenges[u] for u in challenges.values()],
+                            combinations=[[n] for n in range(len(challenges))]
+                        )
+                    )
+                ]
+            )
+        )
 
     def answer_challenge(self, challenge_body, response):
         challb = self._challenges[challenge_body.uri]
@@ -191,7 +202,7 @@ class FakeClient(object):
         self._challenges[challenge_body.uri] = challb
         return succeed(challb)
 
-    def poll(self, authzr):
+    def check_authorization(self, authzr):
         challenges = [
             self._challenges[u] for u
             in self._authorizations[authzr.body.identifier].values()]
@@ -200,12 +211,12 @@ class FakeClient(object):
             if any(c.status == messages.STATUS_VALID for c in challenges)
             else messages.STATUS_PENDING)
         return succeed(
-            (messages.AuthorizationResource(
+            messages.AuthorizationResource(
                 body=messages.Authorization(
                     status=status,
                     challenges=challenges,
                     combinations=[[n] for n in range(len(challenges))])),
-             1.0))
+        )
 
     def request_issuance(self, csr):
         csr = csr.csr
