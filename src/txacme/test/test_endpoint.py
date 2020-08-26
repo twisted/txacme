@@ -55,14 +55,22 @@ class DummyEndpoint(object):
 class TXAcmeTestCaseTestCase(TestCase):
     def test_tear_down(self):
         from twisted.internet import reactor
-        garbage_delayed_call = reactor.callLater(1.0, lambda: None)
+
+        def no_op():
+            pass
+
+        no_op()
+
+        garbage_delayed_call = None
 
         class TestTest(TXACMETestCase):
             def test_test(self):
-                pass
+                nonlocal garbage_delayed_call
+                garbage_delayed_call = reactor.callLater(1.0, no_op)
 
         test_case_under_test = TestTest("test_test")
-        self.assertRaises(AssertionError, test_case_under_test.tearDown)
+        result = test_case_under_test.run()
+        self.assertThat(len(result.failures), Equals(1))
         self.assertThat(garbage_delayed_call.active(), Equals(False))
         self.assertThat(reactor.getDelayedCalls(), Equals([]))
 
