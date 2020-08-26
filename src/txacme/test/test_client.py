@@ -344,7 +344,7 @@ class ClientTests(TestCase):
             self.assertThat(
                 client.register(reg2),
                 failed_with(IsInstance(errors.UnexpectedUpdate)))
-        self.expectThat(succeeded(client.stop()))
+        self.expectThat(client.stop(), succeeded(Equals(None)))
 
     def test_stop_in_progress(self):
         """
