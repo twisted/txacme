@@ -33,7 +33,7 @@ matrix:
   - python: pypy3.6-7.2.0
     dist: bionic
     env: TOXENV=pypy3-twlowest-alldeps
-  - python: 2.7
+  - python: 3.7
     env: TOXENV=docs
     addons:
       apt:
