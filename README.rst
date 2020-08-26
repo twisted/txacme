@@ -30,7 +30,7 @@ interested in implementing or have need of the server side, please get in
 touch!
 
 ``txacme``\ ’s documentation lives at `Read the Docs`_, the code on `GitHub`_.
-It’s rigorously tested on Python 3.6+, and PyPy3.
+It’s lightly tested on Python 3.6+, and PyPy3.
 
 .. _ACME: https://github.com/ietf-wg-acme/acme/blob/master/draft-ietf-acme-acme.md
 
