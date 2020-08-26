@@ -1271,15 +1271,32 @@ class ClientTests(TestCase):
             body=messages.Authorization(
                 identifier=messages.Identifier.from_json(identifier_json),
                 challenges=[challb],
-                combinations=[[0]]))
+                combinations=[[0]]
+            ))
+        orderr = messages.OrderResource(
+            body=messages.Order(
+                identifiers=[authzr.body.identifier],
+                finalize="https://example.org/acme/finalize"
+            ),
+            authorizations=[authzr],
+            csr_pem=csr_for_names(
+                names=[authzr.body.identifier.value],
+                key=RSA_KEY_512_RAW
+            ).public_bytes(serialization.Encoding.PEM),
+            uri='https://example.com/'
+        )
         client = self.useFixture(
-            ClientFixture(sequence, key=RSA_KEY_512)).client
+            ClientFixture(sequence, key=RSA_KEY_512)
+        ).client
         with sequence.consume(self.fail):
-            d = poll_until_valid(authzr, clock, client, timeout=14.)
+            d = get_certificate(orderr, client, clock, timeout=14.)
             clock.pump([5, 5, 5])
+            import sys
+            d.result.printTraceback(sys.stdout)
             self.assertThat(
                 d,
-                failed_with(IsInstance(CancelledError)))
+                failed_with(IsInstance(CancelledError)),
+            )
 
     @example(name=u'example.com')
     @given(name=ts.dns_names())
