@@ -126,7 +126,7 @@ class AcmeFixture(Fixture):
                 controller=self.controller)
         else:
             acme_client = self.acme_client
-        self.responder = RecordingResponder(set(), u'tls-sni-01')
+        self.responder = RecordingResponder(set(), u'http-01')
         args = dict(
             cert_store=self.cert_store,
             client=acme_client,
@@ -338,17 +338,7 @@ class AcmeIssuingServiceTests(TestCase):
             latest_logs = flush_logged_errors()
             self.assertThat(latest_logs, HasLength(1))
             self.assertThat(
-                str(latest_logs[0]), Contains('Failing at "register".'))
-
-            # Forcing a check will trigger again the registration.
-            self.assertThat(
-                fixture.service._check_certs(),
-                succeeded(Always()))
-
-            latest_logs = flush_logged_errors()
-            self.assertThat(latest_logs, HasLength(1))
-            self.assertThat(
-                str(latest_logs[0]), Contains('Failing at "register".'))
+                str(latest_logs[0]), Contains('Failing at "start".'))
 
             # Manually stop the service to not stop it from the fixture
             # and trigger another failure.
@@ -488,10 +478,15 @@ class AcmeIssuingServiceTests(TestCase):
         # First the case with no email given.
         with AcmeFixture() as fixture:
             fixture.service.startService()
-            self.assertThat(fixture.service._regr, MatchesStructure(
-                body=MatchesStructure(
-                    key=Is(None),
-                    contact=Equals(()))))
+            self.assertThat(
+                fixture.service._regr,
+                MatchesStructure(
+                    body=MatchesStructure(
+                        key=Is(None),
+                        contact=Equals(())
+                    )
+                )
+            )
 
         # Next, we give an email.
         with AcmeFixture(email=u'example@example.com') as fixture:

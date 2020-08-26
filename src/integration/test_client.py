@@ -208,7 +208,7 @@ class FakeClientTests(ClientTestsMixin, TestCase):
         return succeed(FakeClient(key, reactor))
 
     def _create_responder(self):
-        return succeed(NullResponder(u'tls-sni-01'))
+        return succeed(NullResponder(u'http-01'))
 
 
 __all__ = ['FakeClientTests']

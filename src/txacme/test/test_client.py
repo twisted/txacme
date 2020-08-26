@@ -49,7 +49,8 @@ from txacme.messages import CertificateRequest
 from txacme.test import strategies as ts
 from txacme.testing import NullResponder
 from txacme.util import (
-    csr_for_names, generate_private_key, generate_tls_sni_01_cert)
+    csr_for_names, generate_private_key
+)
 
 
 def failed_with(matcher):
@@ -392,7 +393,7 @@ class ClientTests(TestCase):
         """
         def rr(status, error=None):
             chall = {
-                u'type': u'tls-sni-01',
+                u'type': u'http-01',
                 u'status': status,
                 u'uri': uri + u'/0',
                 u'token': u'IlirfxKKXAsHtmzK29Pj8A'}
