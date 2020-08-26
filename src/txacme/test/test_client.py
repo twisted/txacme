@@ -121,7 +121,7 @@ class ConnectionPoolFixture:
 class FakePool:
     _fixture_pool: ConnectionPoolFixture
 
-    def closeCachedConnections(self):
+    def closeCachedConnections(self):  # noqa
         self._fixture_pool._closing = True
         return self._fixture_pool._deferred
 
@@ -130,7 +130,9 @@ class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, key=None, alg=RS256, use_connection_pool=False):
+    def __init__(
+        self, sequence, key=None, alg=RS256, use_connection_pool=False
+    ):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
         if isinstance(sequence, treq_RequestSequence):
@@ -386,7 +388,11 @@ class ClientTests(TestCase):
                 return server.NOT_DONE_YET
 
         self.client_fixture = self.useFixture(
-            ClientFixture(NoAnswerResource(), key=RSA_KEY_512, use_connection_pool=use_pool)
+            ClientFixture(
+                NoAnswerResource(),
+                key=RSA_KEY_512,
+                use_connection_pool=use_pool,
+            )
         )
         client = self.client_fixture.client
         reg = messages.NewRegistration.from_data(email=u'example@example.com')
@@ -416,7 +422,8 @@ class ClientTests(TestCase):
         """
         stopped = self.stop_in_progress(True)
         self.assertThat(stopped, has_no_result())
-        self.assertThat(self.client_fixture.pool.started_closing(), Equals(True))
+        self.assertThat(self.client_fixture.pool.started_closing(),
+                        Equals(True))
         self.client_fixture.pool.finish_closing()
         self.assertThat(stopped, succeeded(Equals(None)))
 
