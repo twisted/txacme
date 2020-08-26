@@ -27,7 +27,7 @@ from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
     _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import reactor
-from twisted.internet.defer import CancelledError, fail, succeed
+from twisted.internet.defer import Deferred, CancelledError, fail, succeed
 from twisted.internet.error import ConnectionClosed
 from twisted.internet.task import Clock
 from twisted.python.url import URL
@@ -105,11 +105,32 @@ class Nearly(object):
                     value, self.epsilon, self.expected))
 
 
+@attr.s(auto_attribs=True)
+class ConnectionPoolFixture:
+    _deferred: Deferred = attr.Factory(Deferred)
+    _closing: bool = False
+
+    def started_closing(self):
+        return self._closing
+
+    def finish_closing(self):
+        self._deferred.callback(None)
+
+
+@attr.s(auto_attribs=True)
+class FakePool:
+    _fixture_pool: ConnectionPoolFixture
+
+    def closeCachedConnections(self):
+        self._fixture_pool._closing = True
+        return self._fixture_pool._deferred
+
+
 class ClientFixture(Fixture):
     """
     Create a :class:`~txacme.client.Client` for testing.
     """
-    def __init__(self, sequence, key=None, alg=RS256):
+    def __init__(self, sequence, key=None, alg=RS256, use_connection_pool=False):
         super(ClientFixture, self).__init__()
         self._sequence = sequence
         if isinstance(sequence, treq_RequestSequence):
@@ -118,6 +139,9 @@ class ClientFixture(Fixture):
             )
         else:
             self._agent = RequestTraversalAgent(sequence)
+        if use_connection_pool:
+            self.pool = ConnectionPoolFixture()
+            self._agent._pool = FakePool(self.pool)
         self._directory = messages.Directory({
             messages.NewRegistration:
             u'https://example.org/acme/new-reg',
@@ -140,6 +164,9 @@ class ClientFixture(Fixture):
         self.client = Client(
             self._directory, self.clock, self._key,
             jws_client=jws_client)
+
+    def flush(self):
+        self._agent.flush()
 
 
 def _nonce_response(url, nonce):
@@ -348,11 +375,7 @@ class ClientTests(TestCase):
                 failed_with(IsInstance(errors.UnexpectedUpdate)))
         self.expectThat(client.stop(), succeeded(Equals(None)))
 
-    def test_stop_in_progress(self):
-        """
-        If we stop the client while an operation is in progress, it's
-        cancelled.
-        """
+    def stop_in_progress(self, use_pool=False):
         requested = []
 
         class NoAnswerResource(Resource):
@@ -362,22 +385,40 @@ class ClientTests(TestCase):
                 requested.append(request.notifyFinish())
                 return server.NOT_DONE_YET
 
-        fixture = self.useFixture(
-            ClientFixture(NoAnswerResource(), key=RSA_KEY_512)
+        self.client_fixture = self.useFixture(
+            ClientFixture(NoAnswerResource(), key=RSA_KEY_512, use_connection_pool=use_pool)
         )
-        client = fixture.client
+        client = self.client_fixture.client
         reg = messages.NewRegistration.from_data(email=u'example@example.com')
         register_call = client.register(reg)
         self.expectThat(requested, HasLength(1))
         self.expectThat(register_call, has_no_result())
         self.expectThat(requested[0], has_no_result())
-        self.assertThat(client.stop(), succeeded(Equals(None)))
+        stop_deferred = client.stop()
         self.assertThat(register_call, succeeded(Equals(None)))
-        fixture._agent.flush()
+        self.client_fixture.flush()
         self.assertThat(
             requested[0],
             failed_with(IsInstance(ConnectionClosed)),
         )
+        return stop_deferred
+
+    def test_stop_in_progress(self):
+        """
+        If we stop the client while an operation is in progress, it's
+        cancelled.
+        """
+        self.assertThat(self.stop_in_progress(), succeeded(Equals(None)))
+
+    def test_stop_in_progress_with_pool(self):
+        """
+        If we stop the client while an operation is in progress, it will stop.
+        """
+        stopped = self.stop_in_progress(True)
+        self.assertThat(stopped, has_no_result())
+        self.assertThat(self.client_fixture.pool.started_closing(), Equals(True))
+        self.client_fixture.pool.finish_closing()
+        self.assertThat(stopped, succeeded(Equals(None)))
 
     def test_register(self):
         """
