@@ -40,8 +40,10 @@ from zope.interface import implementer
 from txacme.client import (
     _default_client, _find_supported_challenge, _parse_header_links,
     answer_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
-    fqdn_identifier, JSON_CONTENT_TYPE, JSON_ERROR_CONTENT_TYPE, JWSClient,
-    NoSupportedChallenges, poll_until_valid, ServerError)
+    fqdn_identifier, JSON_CONTENT_TYPE, JOSE_CONTENT_TYPE,
+    JSON_ERROR_CONTENT_TYPE, JWSClient, NoSupportedChallenges, ServerError,
+    get_certificate
+)
 from txacme.interfaces import IResponder
 from txacme.messages import CertificateRequest
 from txacme.test import strategies as ts
@@ -160,9 +162,9 @@ class ClientFixture(Fixture):
         self._alg = alg
 
     def _setUp(self):  # noqa
-        jws_client = JWSClient(self._agent, self._key, self._alg)
-        jws_client._treq._data_to_body_producer = _SynchronousProducer
         self.clock = Clock()
+        jws_client = JWSClient(self._agent, self._key, self._alg, "https://example.org/acme/authz/1/1", None)
+        jws_client._treq._data_to_body_producer = _SynchronousProducer
         self.client = Client(
             self._directory, self.clock, self._key,
             jws_client=jws_client)
@@ -880,17 +882,6 @@ class ClientTests(TestCase):
                             lambda client:
                             client.directory[messages.NewRegistration()],
                             Equals(new_reg)))))
-
-    def test_default_client(self):
-        """
-        ``~txacme.client._default_client`` constructs a client if one was not
-        provided.
-        """
-        reactor = MemoryReactor()
-        client = _default_client(None, reactor, RSA_KEY_512, RS384)
-        self.assertThat(client, IsInstance(JWSClient))
-        # We should probably assert some stuff about the treq.HTTPClient, but
-        # it's hard without doing awful mock stuff.
 
     def test_request_challenges(self):
         """
