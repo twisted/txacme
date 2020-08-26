@@ -694,27 +694,25 @@ def get_certificate(orderr, client, clock, timeout=300.0):
 
     It assumes all authorizations were already validated.
 
-    It waits for the order to be 'valid' for a maximum of 'timeout'
-    seconds.::
+    It waits for the order to be 'valid' for a maximum of 'timeout' seconds.::
 
-        pending --------------+
-           |                  |
-           | All authz        |
-           | "valid"          |
-           V                  |
-         ready ---------------+
-           |                  |
-           | Receive          |
-           | finalize         |
-           | request          |
-           V                  |
-       processing ------------+
-           |                  |
-           | Certificate      | Error or
-           | issued           | Authorization failure
-           V                  V
-         valid             invalid
-
+         pending --------------+
+            |                  |
+            | All authz        |
+            | "valid"          |
+            V                  |
+          ready ---------------+
+            |                  |
+            | Receive          |
+            | finalize         |
+            | request          |
+            V                  |
+        processing ------------+
+            |                  |
+            | Certificate      | Error or
+            | issued           | Authorization failure
+            V                  V
+          valid             invalid
 
     :param ~acme.messages.OrderResource orderr: The order to finalize.
     :param .Client client: The ACME client.
