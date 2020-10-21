@@ -12,8 +12,7 @@ def read(*parts):
 
 
 setup(
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    version='1.0.0.chevah4',
     name='txacme',
     description='ACME protocol implementation for Twisted',
     license='Expat',
