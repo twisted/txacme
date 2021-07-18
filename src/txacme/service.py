@@ -11,7 +11,7 @@ from twisted.application.service import Service
 from twisted.internet import defer
 from twisted.logger import Logger
 
-from txacme.client import answer_challenge, get_certificate
+from txacme.client import answer_challenge, get_certificate, Client
 from txacme.util import clock_now, generate_private_key, tap
 
 
