@@ -4,9 +4,9 @@ name: CI
 
 on:
   push:
-    branches: [ trunk ]
+    branches: [ master ]
   pull_request:
-    branches: [ trunk ]
+    branches: [ master ]
 
 
 defaults:
