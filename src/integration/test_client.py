@@ -22,7 +22,8 @@ from txsni.snimap import SNIMap
 from txsni.tlsendpoint import TLSEndpoint
 
 from txacme.client import (
-    answer_challenge, Client, fqdn_identifier, poll_until_valid)
+    answer_challenge, Client, fqdn_identifier
+)
 from txacme.messages import CertificateRequest
 from txacme.testing import FakeClient, NullResponder
 from txacme.urls import LETSENCRYPT_STAGING_DIRECTORY
@@ -86,13 +87,6 @@ class ClientTestsMixin(object):
                 DeferredContext(
                     answer_challenge(
                         self.authzr, self.client, [responder]))
-                .addActionFinish())
-
-    def _test_poll(self, auth):
-        action = start_action(action_type=u'integration:poll')
-        with action.context():
-            return (
-                DeferredContext(poll_until_valid(auth, reactor, self.client))
                 .addActionFinish())
 
     def _test_issue(self, name):
