@@ -11,7 +11,7 @@ from twisted.application.service import Service
 from twisted.internet import defer
 from twisted.logger import Logger
 
-from txacme.client import answer_challenge, get_certificate, Client
+from txacme.client import answer_challenge, get_certificate
 from txacme.util import clock_now, generate_private_key, tap
 
 
@@ -68,7 +68,7 @@ class AcmeIssuingService(Service):
     cert_store = attr.ib()
     _client = attr.ib(
         converter=lambda maybe_callable: (
-            maybe_callable if isinstance(maybe_callable, Client) else maybe_callable()
+            maybe_callable() if callable(maybe_callable) else maybe_callable
         )
     )
     _clock = attr.ib()
