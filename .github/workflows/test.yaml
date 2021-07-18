@@ -31,13 +31,11 @@ jobs:
         # `python_requires` from `setup.cfg`.
         # Run on latest minor release of each major python version.
         python-version: [3.6, 3.7, 3.8, 3.9]
-        # By default, tests are executed without disabling IPv6.
-        noipv6: ['']
         # Tests are executed with the default target which is the full test suite.
-        trial-target: ['']
+        trial-target: ['txacme']
 
         include:
-          - python-version: 3.6.7
+          - python-version: 3.6
             tox-env: py36
           - python-version: 3.7
             tox-env: py37
@@ -81,7 +79,7 @@ jobs:
         tox ${{ matrix.trial-target }}
 
     - name: Prepare coverage
-      if: always() && contains(matrix['tox-env'], 'withcov')
+      if: always() && contains(matrix['tox-env'])
       run: |
         # sub-process coverage are generated in separate files so we combine them
         # to get an unified coverage for the local run.
@@ -94,6 +92,6 @@ jobs:
       if: always()
       with:
         files: coverage.xml
-        name: lnx-${{ matrix.python-version }}-${{ matrix.tox-env }}${{ matrix.noipv6 }}
+        name: lnx-${{ matrix.python-version }}-${{ matrix.tox-env }}
         fail_ci_if_error: true
         functionalities: gcov,search
