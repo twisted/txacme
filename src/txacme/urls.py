@@ -2,7 +2,7 @@ from twisted.python.url import URL
 
 
 LETSENCRYPT_DIRECTORY = URL.fromText(
-    u'https://acme-v01.api.letsencrypt.org/directory')
+    u'https://acme-v02.api.letsencrypt.org/directory')
 
 
 LETSENCRYPT_STAGING_DIRECTORY = URL.fromText(

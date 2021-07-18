@@ -34,11 +34,13 @@ class AcmeIssuingService(Service):
         manage.
 
     :type client: `txacme.client.Client`
-    :param client: A client which is already set to be used for an
-        environment.  For example, ``Client.from_url(reactor=reactor,
-        url=LETSENCRYPT_STAGING_DIRECTORY, key=acme_key, alg=RS256)``.
-        When the service is stopped, it will automatically call the stop
-        method on the client.
+    :param client: A client, or Deferred of a client, which is already set to
+        be used for an environment; for example,
+        Client.from_url(reactor=reactor, url=LETSENCRYPT_STAGING_DIRECTORY,
+        key=acme_key, alg=RS256).
+
+        When the service is stopped, it will automatically call the stop method
+        on the client.
 
     :param clock: ``IReactorTime`` provider; usually the reactor, when not
         testing.
@@ -82,6 +84,7 @@ class AcmeIssuingService(Service):
 
     _waiting = attr.ib(default=attr.Factory(list), init=False)
     _issuing = attr.ib(default=attr.Factory(dict), init=False)
+    _cached_client = attr.ib(default=None)
     ready = False
     # Service used to repeatedly call the certificate check and renewal.
     _timer_service = None
@@ -94,6 +97,29 @@ class AcmeIssuingService(Service):
         Get the current time.
         """
         return clock_now(self._clock)
+
+    def _get_client(self):
+        """
+        Get the client, cache it if it's ready.
+        """
+        if self._cached_client is not None:
+            return defer.succeed(self._cached_client)
+        client_or_d = self._client
+        if isinstance(client_or_d, defer.Deferred):
+            new_d = defer.Deferred()
+            @client_or_d.addCallback
+            def got_client(final_client):
+                self._cached_client = final_client
+                new_d.callback(final_client)
+                return final_client
+            @client_or_d.addErrback
+            def got_client(error):
+                new_d.errback(error)
+                return error
+            return got_client
+        else:
+            self._cached_client = client_or_d
+            return defer.succeed(client_or_d)
 
     def _check_certs(self):
         """
@@ -199,6 +225,7 @@ class AcmeIssuingService(Service):
         names = [n.strip() for n in server_names.split(',')]
         return ','.join(names)
 
+    @defer.inlineCallbacks
     def _issue_cert(self, server_names):
         """
         Issue a new cert for the list of server_names.
@@ -212,40 +239,28 @@ class AcmeIssuingService(Service):
             server_names=server_names)
         key = self._generate_key()
         objects = [
-            pem.Key(key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption()))]
-
-        @defer.inlineCallbacks
-        def answer_to_order(orderr):
-            """
-            Answer the challenges associated with the order.
-            """
-            for authorization in orderr.authorizations:
-                yield answer_challenge(
-                    authorization,
-                    self._client,
-                    self._responders,
-                    clock=self._clock,
-                )
-            certificate = yield get_certificate(
-                orderr, self._client, clock=self._clock)
-            defer.returnValue(certificate)
-
-        def got_cert(certr):
-            """
-            Called when we got a certificate.
-            """
-            # The certificate is returned as chain.
-            objects.extend(pem.parse(certr.body))
-            self.cert_store.store(','.join(names), objects)
-
-        return (
-            self._client.submit_order(key, names)
-            .addCallback(answer_to_order)
-            .addCallback(got_cert)
+            pem.Key(
+                key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption())
             )
+        ]
+        client = yield self._get_client()
+        orderr = yield client.submit_order(key, names)
+        for authorization in orderr.authorizations:
+            yield answer_challenge(
+                authorization,
+                client,
+                self._responders,
+                clock=self._clock,
+            )
+        certificate = yield get_certificate(
+            orderr, client, clock=self._clock)
+        # The certificate is returned as chain.
+        objects.extend(pem.parse(certr.body))
+        self.cert_store.store(','.join(names), objects)
+        return certificate
 
     def when_certs_valid(self):
         """
@@ -268,6 +283,7 @@ class AcmeIssuingService(Service):
         self._waiting.append(d)
         return d
 
+    @defer.inlineCallbacks
     def start(self):
         """
         Like startService, but will return a deferred once the service was
@@ -275,16 +291,13 @@ class AcmeIssuingService(Service):
         """
         Service.startService(self)
 
-        def cb_start(result):
-            """
-            Called when the client is ready for operation.
-            """
-            self._timer_service = TimerService(
-                self.check_interval.total_seconds(), self._check_certs)
-            self._timer_service.clock = self._clock
-            self._timer_service.startService()
-
-        return self._client.start(email=self._email).addCallback(cb_start)
+        client = yield self._get_client()
+        result = yield client.start(email=self._email)
+        self._timer_service = TimerService(
+            self.check_interval.total_seconds(), self._check_certs
+        )
+        self._timer_service.clock = self._clock
+        self._timer_service.startService()
 
     def startService(self):
         """
@@ -295,26 +308,21 @@ class AcmeIssuingService(Service):
         """
         self.start().addErrback(self._panic, 'FAIL-TO-START')
 
+    @defer.inlineCallbacks
     def stopService(self):
         Service.stopService(self)
         self.ready = False
         for d in list(self._waiting):
             d.cancel()
         self._waiting = []
+        client = yield self._get_client()
 
-        def stop_timer(ignored):
-            if not self._timer_service:
-                return
-            return self._timer_service.stopService()
-
-        def cleanup(ignored):
-            self._timer_service = None
-
-        return (
-            self._client.stop()
-            .addBoth(tap(stop_timer))
-            .addBoth(tap(cleanup))
-            )
+        result = yield self._client.stop()
+        if not self._timer_service:
+            return result
+        yield self._timer_service.stopService()
+        self._timer_service = None
+        return result
 
 
 __all__ = ['AcmeIssuingService']

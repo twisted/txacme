@@ -166,11 +166,12 @@ def _default_client(jws_client, reactor, key, alg, directory, timeout):
         agent = Agent(reactor, pool=pool)
         jws_d = JWSClient.from_directory(agent, key, alg, directory)
     else:
+        assert 0, "Not supported right now, we need a directory object."
         jws_d = defer.succeed(jws_client)
 
-    def set_timeout(jws_client):
-        jws_client.timeout = timeout
-        return jws_client
+    def set_timeout(jws_client_and_dir):
+        jws_client_and_dir[0].timeout = timeout
+        return jws_client_and_dir
 
     return jws_d.addCallback(set_timeout)
 
@@ -220,6 +221,7 @@ class Client(object):
         self.directory = directory
         self.key = key
         self._kid = None
+        print("created client:", vars(self))
 
     @classmethod
     def from_url(
@@ -251,11 +253,12 @@ class Client(object):
         with action.context():
             check_directory_url_type(url)
             directory = url.asText()
-            jws_client = _default_client(
-                jws_client, reactor, key, alg, directory, timeout
-            )
             action.add_success_fields(directory=directory)
-            return succeed(cls(reactor, key, jws_client))
+            return DeferredContext(
+                _default_client(jws_client, reactor, key, alg, directory, timeout)
+            ).addCallback(
+                lambda jws_client_and_dir: cls(directory=jws_client_and_dir[1], reactor=reactor, key=key, jws_client=jws_client_and_dir[0])
+            ).addActionFinish()
 
     def start(self, email=None):
         """
@@ -828,20 +831,20 @@ class JWSClient(object):
         :param str directory: The URL to the ACME v2 directory.
 
         :return: When operation is done.
-        :rtype: Deferred[None]
+        :rtype: Deferred[Tuple[JWSClient, directory]]
         """
         # Provide invalid new_nonce_url & kid, but don't expose it to the
         # caller.
         self = cls(agent, key, alg, None, None)
 
-        def cb_extract_new_nonce(directory):
+        def cb_extract_new_nonce(messages_dir_object):
+            print("MSGDIR", vars(messages_dir_object))
             try:
-                self._new_nonce = directory.newNonce
+                self._new_nonce = messages_dir_object.newNonce
             except AttributeError:
                 raise errors.ClientError(
-                    'Directory has no newNonce URL', directory)
-
-            return directory
+                    'Directory has no newNonce URL', messages_dir_object)
+            return self, messages_dir_object
         return (
             self.get(directory)
             .addCallback(json_content)
