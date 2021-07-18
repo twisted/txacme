@@ -251,16 +251,11 @@ class Client(object):
         with action.context():
             check_directory_url_type(url)
             directory = url.asText()
-            return (
-                DeferredContext(jws_client=_default_client(
-                    jws_client, reactor, key, alg, directory, timeout
-                ))
-                .addCallback(
-                    tap(lambda jws_client:
-                        action.add_success_fields(directory=directory)))
-                .addCallback(lambda jws_client: cls(reactor, key, jws_client))
-                .addActionFinish()
+            jws_client = _default_client(
+                jws_client, reactor, key, alg, directory, timeout
             )
+            action.add_success_fields(directory=directory)
+            return succeed(cls(reactor, key, jws_client))
 
     def start(self, email=None):
         """
