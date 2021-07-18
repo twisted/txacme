@@ -44,14 +44,14 @@ Executing tests and checking coverage
 
 You can run all tests in a specific environment, or just a single test::
 
-    $ tox -e py27-twlatest txacme.test.test_service
-    $ tox -e py27-twlatest \
+    $ tox --develop -e py38-twlatest txacme.test.test_service
+    $ tox --develop -e py39-twlatest \
           txacme.test.test_service.AcmeIssuingServiceTests.test_timer_errors
 
 You can check the test coverage, and diff coverage by running the dedicated
 `coverage-report` tox env::
 
-    $ tox -e py27-twlatest,coverage-report
+    $ tox -e py38-twlatest,coverage-report
 
 There is a tox environment dedicated to code style checks::
 
@@ -64,6 +64,6 @@ and another one for documentation and API checks::
 If executing the `tox` environment is too slow for you, you can always enable
 a specific environment and execute the test with `trial`::
 
-    $ . .tox/py27-twlatest/bin/activate
+    $ . .tox/py38-twlatest/bin/activate
     $ pip install -e .
     $ trial txacme.test.test_service.AcmeIssuingServiceTests.test_timer_errors
