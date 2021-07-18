@@ -66,7 +66,11 @@ class AcmeIssuingService(Service):
         key generation requirements.
     """
     cert_store = attr.ib()
-    _client = attr.ib()
+    _client = attr.ib(
+        converter=lambda maybe_callable: (
+            maybe_callable if isinstance(maybe_callable, Client) else maybe_callable()
+        )
+    )
     _clock = attr.ib()
     _responders = attr.ib()
     _email = attr.ib(default=None)
