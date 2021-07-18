@@ -165,46 +165,6 @@ class PluginTests(TXACMETestCase):
                 prefix=Equals('lets'),
                 directory=Equals(LETSENCRYPT_STAGING_DIRECTORY)))
 
-    def test_parser(self):
-        """
-        ``AcmeParser`` creates an endpoint with the specified ACME directory
-        and directory store.
-        """
-        directory = URL.fromText(u'https://example.com/acme')
-        parser = _AcmeParser(u'prefix', directory)
-        tempdir = self.useFixture(TempDir()).path
-        temp_path = FilePath(tempdir)
-        key_path = temp_path.child('client.key')
-        reactor = MemoryReactorClock()
-        self.assertThat(
-            parser.parseStreamServer(
-                reactor, tempdir, 'tcp', '443', timeout=0),
-            MatchesAll(
-                IsInstance(AutoTLSEndpoint),
-                MatchesStructure(
-                    reactor=Is(reactor),
-                    directory=Equals(directory),
-                    cert_store=MatchesAll(
-                        IsInstance(DirectoryStore),
-                        MatchesStructure(
-                            path=Equals(temp_path))),
-                    cert_mapping=MatchesAll(
-                        IsInstance(HostDirectoryMap),
-                        MatchesStructure(
-                            directoryPath=Equals(temp_path))),
-                    sub_endpoint=MatchesPredicate(
-                        IStreamServerEndpoint.providedBy,
-                        '%r is not a stream server endpoint'))))
-        self.assertThat(key_path.isfile(), Equals(True))
-        key_data = key_path.getContent()
-
-        # Multiple instances with certificates from the same local directory,
-        # will serve the same certificates.
-        parser.parseStreamServer(reactor, tempdir, 'tcp', '443', timeout=0)
-        self.assertThat(key_path.getContent(), Equals(key_data))
-
-        # Check that reactor is clean.
-        self.assertEquals(0, len(reactor.getDelayedCalls()))
 
 
 class LoadClientKeyTests(TXACMETestCase):

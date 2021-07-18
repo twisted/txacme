@@ -11,7 +11,6 @@ from twisted.internet.ssl import CertificateOptions
 from zope.interface import implementer
 
 from txacme.interfaces import IResponder
-from txacme.util import generate_tls_sni_01_cert
 
 
 @attr.s(hash=False)

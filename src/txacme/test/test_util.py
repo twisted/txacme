@@ -21,7 +21,8 @@ from txacme.test.matchers import ValidForName
 from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
 from txacme.util import (
     const, csr_for_names, decode_csr, encode_csr,
-    generate_private_key, generate_tls_sni_01_cert)
+    generate_private_key
+)
 
 
 class GeneratePrivateKeyTests(TestCase):

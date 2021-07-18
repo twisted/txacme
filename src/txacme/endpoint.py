@@ -118,7 +118,7 @@ class AutoTLSEndpoint(object):
                     lambda _: _WrapperPort(port=port, service=self.service))
             )
 
-        sni_map = SNIMap(responder.wrap_host_map(self.cert_mapping))
+        sni_map = SNIMap(self.cert_mapping)
         return (
             maybeDeferred(
                 self.sub_endpoint.listen,
