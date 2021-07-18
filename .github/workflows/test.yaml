@@ -79,7 +79,7 @@ jobs:
         tox ${{ matrix.trial-target }}
 
     - name: Prepare coverage
-      if: always() && contains(matrix['tox-env'])
+      if: always()
       run: |
         # sub-process coverage are generated in separate files so we combine them
         # to get an unified coverage for the local run.
