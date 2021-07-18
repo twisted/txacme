@@ -2,11 +2,12 @@
 Tests for `txacme.challenges`.
 """
 from operator import methodcaller
+from datetime import timedelta
 
 from acme import challenges
 from josepy.b64 import b64encode
 from hypothesis import strategies as s
-from hypothesis import assume, example, given
+from hypothesis import assume, example, given, settings
 from testtools import skipIf, TestCase
 from testtools.matchers import (
     AfterPreprocessing, Always, Contains, EndsWith, Equals, HasLength,
@@ -178,6 +179,7 @@ class HTTPResponderTests(_CommonResponderTests, TestCase):
 
     @example(token=b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU')
     @given(token=s.binary(min_size=32, max_size=32).map(b64encode))
+    @settings(deadline=timedelta(milliseconds=1000))
     def test_start_responding(self, token):
         """
         Calling ``start_responding`` makes an appropriate resource available.
