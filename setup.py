@@ -12,7 +12,7 @@ def read(*parts):
 
 
 setup(
-    version='1.0.0.chevah4',
+    version='2.0.0.dev0',
     name='txacme',
     description='ACME protocol implementation for Twisted',
     license='Expat',
