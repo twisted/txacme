@@ -1,6 +1,5 @@
 import os
 import codecs
-import versioneer
 from setuptools import setup, find_packages
 
 HERE = os.path.abspath(os.path.dirname(__file__))
@@ -22,7 +21,7 @@ setup(
     maintainer='Tristan Seligmann',
     maintainer_email='mithrandi@mithrandi.net',
     long_description=read('README.rst'),
-    packages=find_packages(where='src') + ['twisted.plugins'],
+    packages=find_packages(where='src'),
     package_dir={'': 'src'},
     zip_safe=True,
     classifiers=[
@@ -58,13 +57,8 @@ setup(
         'libcloud': [
             'apache-libcloud',
         ],
-        'test': [
-            'fixtures>=1.4.0',
-            'hypothesis>=4.0.0,<5.0.0',
-            'service_identity>=17.0.0',
-            'testrepository>=0.0.20',
-            'testscenarios',
-            'testtools>=2.1.0',
+        'dev': [
+            'coverage',
             'eliot-tree',
             ],
         },

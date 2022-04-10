@@ -13,20 +13,11 @@ from acme import challenges, errors, messages
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fixtures import Fixture
-from hypothesis import strategies as s
-from hypothesis import assume, example, given, settings
-from testtools import ExpectedException, TestCase
-from testtools.matchers import (
-    AfterPreprocessing, Always, ContainsDict, Equals, Is, IsInstance,
-    MatchesAll, MatchesListwise, MatchesPredicate, MatchesStructure, Mismatch,
-    Never, Not, StartsWith, HasLength)
-from testtools.twistedsupport import failed, succeeded, has_no_result
 from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
 from treq.testing import (
     _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
-from twisted.internet import reactor
+from twisted.internet import defer, reactor
 from twisted.internet.defer import Deferred, CancelledError, fail, succeed
 from twisted.internet.error import ConnectionClosed
 from twisted.internet.task import Clock
@@ -37,6 +28,8 @@ from twisted.web.resource import Resource
 from twisted.web.http_headers import Headers
 from zope.interface import implementer
 
+from unittest import TestCase
+
 from txacme.client import (
     _default_client, _find_supported_challenge, _parse_header_links,
     answer_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
@@ -46,7 +39,6 @@ from txacme.client import (
 )
 from txacme.interfaces import IResponder
 from txacme.messages import CertificateRequest
-from txacme.test import strategies as ts
 from txacme.testing import NullResponder
 from txacme.util import (
     csr_for_names, generate_private_key
@@ -90,118 +82,6 @@ RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
 ).private_key(default_backend())
 
 RSA_KEY_512 = JWKRSA(key=RSA_KEY_512_RAW)
-
-
-class Nearly(object):
-    """Within a certain threshold."""
-    def __init__(self, expected, epsilon=0.001):
-        self.expected = expected
-        self.epsilon = epsilon
-
-    def __str__(self):
-        return 'Nearly(%r, %r)' % (self.expected, self.epsilon)
-
-    def match(self, value):
-        if abs(value - self.expected) > self.epsilon:
-            return Mismatch(
-                u'%r more than %r from %r' % (
-                    value, self.epsilon, self.expected))
-
-
-@attr.s(auto_attribs=True)
-class ConnectionPoolFixture:
-    _deferred: Deferred = attr.Factory(Deferred)
-    _closing: bool = False
-
-    def started_closing(self):
-        return self._closing
-
-    def finish_closing(self):
-        self._deferred.callback(None)
-
-
-@attr.s(auto_attribs=True)
-class FakePool:
-    _fixture_pool: ConnectionPoolFixture
-
-    def closeCachedConnections(self):  # noqa
-        self._fixture_pool._closing = True
-        return self._fixture_pool._deferred
-
-
-class ClientFixture(Fixture):
-    """
-    Create a :class:`~txacme.client.Client` for testing.
-    """
-    def __init__(
-        self, sequence, key=None, alg=RS256, use_connection_pool=False
-    ):
-        super(ClientFixture, self).__init__()
-        self._sequence = sequence
-        if isinstance(sequence, treq_RequestSequence):
-            self._agent = RequestTraversalAgent(
-                StringStubbingResource(self._sequence)
-            )
-        else:
-            self._agent = RequestTraversalAgent(sequence)
-        if use_connection_pool:
-            self.pool = ConnectionPoolFixture()
-            self._agent._pool = FakePool(self.pool)
-        self._directory = messages.Directory({
-            messages.NewRegistration:
-            u'https://example.org/acme/new-reg',
-            messages.Revocation:
-            u'https://example.org/acme/revoke-cert',
-            messages.NewAuthorization:
-            u'https://example.org/acme/new-authz',
-            messages.CertificateRequest:
-            u'https://example.org/acme/new-cert',
-            "newAccount":
-            u"https://example.org/acme/new-account",
-            })
-        if key is None:
-            key = JWKRSA(key=generate_private_key('rsa'))
-        self._key = key
-        self._alg = alg
-
-    def _setUp(self):  # noqa
-        self.clock = Clock()
-        jws_client = JWSClient(self._agent, self._key, self._alg, "https://example.org/acme/authz/1/1", None)
-        jws_client._treq._data_to_body_producer = _SynchronousProducer
-        self.client = Client(
-            self._directory, self.clock, self._key,
-            jws_client=jws_client)
-
-    def flush(self):
-        self._agent.flush()
-
-
-def _nonce_response(url, nonce):
-    """
-    Construct an expected request for an initial nonce check.
-
-    :param bytes url: The url being requested.
-    :param bytes nonce: The nonce to return.
-
-    :return: A request/response tuple suitable for use with
-        :class:`~treq.testing.RequestSequence`.
-    """
-    return (
-        MatchesListwise([
-            Equals(b'HEAD'),
-            Equals(url),
-            Equals({}),
-            ContainsDict({b'User-Agent':
-                          MatchesListwise([StartsWith(b'txacme/')])}),
-            Equals(b'')]),
-        (http.NOT_ALLOWED,
-         {b'content-type': JSON_CONTENT_TYPE,
-          b'replay-nonce': b64encode(nonce)},
-         b'{}'))
-
-
-def _json_dumps(j):
-    return json.dumps(j).encode("utf-8")
 
 
 class RequestSequence(treq_RequestSequence):
@@ -296,250 +176,76 @@ class ClientTests(TestCase):
     """
     :class:`.Client` provides a client interface for the ACME API.
     """
+
+    @defer.inlineCallbacks
     def test_directory_url_type(self):
         """
         `~txacme.client.Client.from_url` expects a ``twisted.python.url.URL``
         instance for the ``url`` argument.
         """
-        with ExpectedException(TypeError):
-            Client.from_url(
+        with self.assertRaises(TypeError):
+            yield Client.from_url(
                 reactor, '/wrong/kind/of/directory', key=RSA_KEY_512)
 
-    def stop_in_progress(self, use_pool=False):
-        requested = []
-
-        class NoAnswerResource(Resource):
-            isLeaf = True       # noqa
-
-            def render(self, request):
-                requested.append(request.notifyFinish())
-                return server.NOT_DONE_YET
-
-        self.client_fixture = self.useFixture(
-            ClientFixture(
-                NoAnswerResource(),
-                key=RSA_KEY_512,
-                use_connection_pool=use_pool,
-            )
-        )
-        client = self.client_fixture.client
-        reg = messages.NewRegistration.from_data(email=u'example@example.com')
-        register_call = client.start()
-        self.expectThat(requested, HasLength(1))
-        self.expectThat(register_call, has_no_result())
-        self.expectThat(requested[0], has_no_result())
-        stop_deferred = client.stop()
-        self.assertThat(register_call, succeeded(Equals(None)))
-        self.client_fixture.flush()
-        self.assertThat(
-            requested[0],
-            failed_with(IsInstance(ConnectionClosed)),
-        )
-        return stop_deferred
-
-    def test_stop_in_progress(self):
-        """
-        If we stop the client while an operation is in progress, it's
-        cancelled.
-        """
-        self.assertThat(self.stop_in_progress(), succeeded(Equals(None)))
-
-    def test_stop_in_progress_with_pool(self):
-        """
-        If we stop the client while an operation is in progress, it will stop.
-        """
-        stopped = self.stop_in_progress(True)
-        self.assertThat(stopped, has_no_result())
-        self.assertThat(
-            self.client_fixture.pool.started_closing(),
-            Equals(True),
-        )
-        self.client_fixture.pool.finish_closing()
-        self.assertThat(stopped, succeeded(Equals(None)))
-
-    @example(u'example.com')
-    @given(ts.dns_names())
-    def test_fqdn_identifier(self, name):
+    def test_fqdn_identifier(self):
         """
         `~txacme.client.fqdn_identifier` constructs an
         `~acme.messages.Identifier` of the right type.
         """
-        self.assertThat(
-            fqdn_identifier(name),
-            MatchesStructure(
-                typ=Equals(messages.IDENTIFIER_FQDN),
-                value=Equals(name)))
+        name = u'example.com'
+        result = fqdn_identifier(name)
+        self.assertEqual(messages.IDENTIFIER_FQDN, result.typ)
+        self.assertEqual(name, result.value)
 
-    @example(URL.fromText(u'https://example.org/'),
-             URL.fromText(u'https://example.com/'))
-    @given(ts.urls(), ts.urls())
-    def test_challenge_unexpected_uri(self, url1, url2):
+    def test_challenge_unexpected_uri(self):
         """
         ``_check_challenge`` raises `~acme.errors.UnexpectedUpdate` if the
         challenge does not have the expected URI.
         """
-        url1 = url1.asURI().asText()
-        url2 = url2.asURI().asText()
-        assume(url1 != url2)
-        with ExpectedException(errors.UnexpectedUpdate):
+        # Crazy dance that was used in previous test.
+        url1 = URL.fromText(u'https://example.org/').asURI().asText()
+        url2 = URL.fromText(u'https://example.com/').asURI().asText()
+
+        with self.assertRaises(errors.UnexpectedUpdate):
             Client._check_challenge(
-                messages.ChallengeResource(
+                challenge=messages.ChallengeResource(
                     body=messages.ChallengeBody(chall=None, uri=url1)),
-                messages.ChallengeBody(chall=None, uri=url2))
-
-    def _make_poll_response(self, uri, identifier_json):
-        """
-        Return a factory for a poll response.
-        """
-        def rr(status, error=None):
-            chall = {
-                u'type': u'http-01',
-                u'status': status,
-                u'uri': uri + u'/0',
-                u'token': u'IlirfxKKXAsHtmzK29Pj8A'}
-            if error is not None:
-                chall[u'error'] = error
-            return (
-                MatchesListwise([
-                    Equals(b'GET'),
-                    Equals(uri),
-                    Equals({}),
-                    Always(),
-                    Always()]),
-                (http.ACCEPTED,
-                 {b'content-type': JSON_CONTENT_TYPE,
-                  b'replay-nonce': b64encode(b'nonce2'),
-                  b'location': uri.encode('ascii'),
-                  b'link': b'<https://example.org/acme/new-cert>;rel="next"'},
-                 _json_dumps({
-                     u'status': status,
-                     u'identifier': identifier_json,
-                     u'challenges': [chall],
-                     u'combinations': [[0]],
-                 })))
-        return rr
-
-    def _make_cert_sequence(self, cert_urls):
-        """
-        Build a sequence for fetching a list of certificates.
-        """
-        return RequestSequence([
-            (MatchesListwise([
-                Equals(b'GET'),
-                Equals(url),
-                Equals({}),
-                ContainsDict({b'Accept': Equals([DER_CONTENT_TYPE])}),
-                Always()]),
-             (http.OK,
-              {b'content-type': DER_CONTENT_TYPE,
-               b'location': url.encode('utf-8'),
-               b'link':
-               u'<{!s}>;rel="up"'.format(
-                   issuer_url).encode('utf-8')
-               if issuer_url is not None else b''},
-              b''))
-            for url, issuer_url
-            in cert_urls
-            ], self.expectThat)
+                challenge_body=messages.ChallengeBody(chall=None, uri=url2),
+                )
 
 
 class JWSClientTests(TestCase):
     """
     :class:`.JWSClient` implements JWS-signed requests over HTTP.
     """
+    @defer.inlineCallbacks
     def test_check_invalid_error(self):
         """
         If an error response is received but cannot be parsed,
         :exc:`~acme.errors.ServerError` is raised.
         """
-        self.assertThat(
-            JWSClient._check_response(
-                TestResponse(
-                    code=http.FORBIDDEN,
-                    content_type=JSON_ERROR_CONTENT_TYPE)),
-            failed_with(IsInstance(ServerError)))
+        response = TestResponse(
+            code=http.FORBIDDEN,
+            content_type=JSON_ERROR_CONTENT_TYPE)
 
+        with self.assertRaises(ServerError):
+            yield JWSClient._check_response(response)
+
+    @defer.inlineCallbacks
     def test_check_valid_error(self):
         """
         If an error response is received but cannot be parsed,
         :exc:`~acme.errors.ClientError` is raised.
         """
-        self.assertThat(
-            JWSClient._check_response(
-                TestResponse(
-                    code=http.FORBIDDEN,
-                    content_type=JSON_ERROR_CONTENT_TYPE,
-                    json=lambda: succeed({
-                        u'type': u'unauthorized',
-                        u'detail': u'blah blah blah'}))),
-            failed_with(
-                MatchesAll(
-                    IsInstance(ServerError),
-                    AfterPreprocessing(repr, StartsWith('ServerError')))))
+        response = TestResponse(
+            code=http.FORBIDDEN,
+            content_type=JSON_ERROR_CONTENT_TYPE,
+            json=lambda: succeed({
+                u'type': u'unauthorized',
+                u'detail': u'blah blah blah'}))
 
-
-class ExtraCoverageTests(TestCase):
-    """
-    Tests to get coverage on some test helpers that we don't really want to
-    maintain ourselves.
-    """
-    def test_always_never(self):
-        self.assertThat(Always(), AfterPreprocessing(str, Equals('Always()')))
-        self.assertThat(Never(), AfterPreprocessing(str, Equals('Never()')))
-        self.assertThat(None, Not(Never()))
-        self.assertThat(
-            Nearly(1.0, 2.0),
-            AfterPreprocessing(str, Equals('Nearly(1.0, 2.0)')))
-        self.assertThat(2.0, Not(Nearly(1.0)))
-
-    def test_unexpected_number_of_request_causes_failure(self):
-        """
-        If there are no more expected requests, making a request causes a
-        failure.
-        """
-        async_failures = []
-        sequence = RequestSequence(
-            [],
-            async_failure_reporter=lambda *a: async_failures.append(a))
-        client = HTTPClient(
-            agent=RequestTraversalAgent(
-                StringStubbingResource(sequence)),
-            data_to_body_producer=_SynchronousProducer)
-        d = client.get('https://anything', data=b'what', headers={b'1': b'1'})
-        self.assertThat(
-            d,
-            succeeded(MatchesStructure(code=Equals(500))))
-        self.assertEqual(1, len(async_failures))
-        self.assertIn("No more requests expected, but request",
-                      async_failures[0][2])
-
-        # the expected requests have all been made
-        self.assertTrue(sequence.consumed())
-
-    def test_consume_context_manager_fails_on_remaining_requests(self):
-        """
-        If the ``consume`` context manager is used, if there are any remaining
-        expecting requests, the test case will be failed.
-        """
-        sequence = RequestSequence(
-            [(Always(), (418, {}, b'body'))] * 2,
-            async_failure_reporter=self.assertThat)
-        client = HTTPClient(
-            agent=RequestTraversalAgent(
-                StringStubbingResource(sequence)),
-            data_to_body_producer=_SynchronousProducer)
-
-        consume_failures = []
-        with sequence.consume(sync_failure_reporter=consume_failures.append):
-            self.assertThat(
-                client.get('https://anything', data=b'what',
-                           headers={b'1': b'1'}),
-                succeeded(Always()))
-
-        self.assertEqual(1, len(consume_failures))
-        self.assertIn(
-            "Not all expected requests were made.  Still expecting:",
-            consume_failures[0])
+        with self.assertRaises(ServerError):
+            yield JWSClient._check_response(response)
 
 
 class LinkParsingTests(TestCase):
@@ -554,18 +260,18 @@ class LinkParsingTests(TestCase):
         """
         The first example from the RFC.
         """
-        self.assertThat(
-            _parse_header_links(
-                TestResponse(
-                    links=[b'<http://example.com/TheBook/chapter2>; '
-                           b'rel="previous"; '
-                           b'title="previous chapter"'])),
-            Equals({
-                u'previous':
-                {u'rel': u'previous',
-                 u'title': u'previous chapter',
-                 u'url': u'http://example.com/TheBook/chapter2'}
-            }))
+        response = TestResponse(links=[
+            b'<http://example.com/TheBook/chapter2>; '
+           b'rel="previous"; '
+           b'title="previous chapter"'])
+        result = _parse_header_links(response)
+        self.assertEqual({
+            u'previous':
+            {u'rel': u'previous',
+             u'title': u'previous chapter',
+             u'url': u'http://example.com/TheBook/chapter2'}
+            },
+            result)
 
 
 __all__ = ['ClientTests', 'ExtraCoverageTests', 'LinkParsingTests']

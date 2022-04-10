@@ -1,18 +1,15 @@
 from operator import methodcaller
+import os
+import tempfile
+import shutil
 
 import pem
-from fixtures import TempDir
-from hypothesis import example, given
-from testtools import TestCase
-from testtools.matchers import (
-    AfterPreprocessing, AllMatch, ContainsDict, Equals, Is, IsInstance)
-from testtools.twistedsupport import succeeded
+from twisted.internet import defer
 from twisted.python.compat import unicode
 from twisted.python.filepath import FilePath
+from twisted.trial.unittest import TestCase
 
 from txacme.store import DirectoryStore
-from txacme.test import strategies as ts
-from txacme.test.test_client import failed_with
 from txacme.testing import MemoryStore
 
 
@@ -47,93 +44,109 @@ class _StoreTestsMixin(object):
     """
     Tests for `txacme.interfaces.ICertificateStore` implementations.
     """
-    @example(u'example.com', EXAMPLE_PEM_OBJECTS)
-    @given(ts.dns_names(), ts.pem_objects())
-    def test_insert(self, server_name, pem_objects):
+
+    @defer.inlineCallbacks
+    def test_insert(self):
         """
         Inserting an entry causes the same entry to be returned by ``get`` and
         ``as_dict``.
         """
-        self.assertThat(
-            self.cert_store.store(server_name, pem_objects),
-            succeeded(Is(None)))
-        self.assertThat(
-            self.cert_store.get(server_name),
-            succeeded(Equals(pem_objects)))
-        self.assertThat(
-            self.cert_store.as_dict(),
-            succeeded(ContainsDict(
-                {server_name: Equals(pem_objects)})))
+        server_name = 'example.com'
+        pem_objects = EXAMPLE_PEM_OBJECTS
+        cert_store = self.getCertStore()
 
-    @example(u'example.com', EXAMPLE_PEM_OBJECTS, EXAMPLE_PEM_OBJECTS2)
-    @given(ts.dns_names(), ts.pem_objects(), ts.pem_objects())
-    def test_insert_twice(self, server_name, pem_objects, pem_objects2):
+        result = yield cert_store.store(server_name, pem_objects)
+        self.assertIsNone(result)
+
+        result = yield cert_store.get(server_name)
+        self.assertEqual(pem_objects, result)
+
+        result = yield cert_store.as_dict()
+        self.assertEqual({'example.com': pem_objects}, result)
+
+    @defer.inlineCallbacks
+    def test_insert_twice(self):
         """
         Inserting an entry a second time overwrites the first entry.
         """
-        self.assertThat(
-            self.cert_store.store(server_name, pem_objects),
-            succeeded(Is(None)))
-        self.assertThat(
-            self.cert_store.store(server_name, pem_objects2),
-            succeeded(Is(None)))
-        self.assertThat(
-            self.cert_store.get(server_name),
-            succeeded(Equals(pem_objects2)))
-        self.assertThat(
-            self.cert_store.as_dict(),
-            succeeded(ContainsDict({server_name: Equals(pem_objects2)})))
+        server_name = u'example.com'
+        pem_objects = EXAMPLE_PEM_OBJECTS
+        pem_objects2 = EXAMPLE_PEM_OBJECTS2
+        cert_store = self.getCertStore()
 
-    @example(u'example.com')
-    @given(ts.dns_names())
-    def test_get_missing(self, server_name):
+        result = yield cert_store.store(server_name, pem_objects)
+        self.assertIsNone(result)
+
+        result = yield cert_store.store(server_name, pem_objects2)
+        self.assertIsNone(result)
+
+        result = yield cert_store.get(server_name)
+        self.assertEqual(result, pem_objects2)
+
+        result = yield cert_store.as_dict()
+        self.assertEqual({'example.com': pem_objects2}, result)
+
+    @defer.inlineCallbacks
+    def test_get_missing(self):
         """
         Getting a non-existent entry results in `KeyError`.
         """
-        self.assertThat(
-            self.cert_store.get(server_name),
-            failed_with(IsInstance(KeyError)))
+        cert_store = self.getCertStore()
 
-    @example(u'example.com', EXAMPLE_PEM_OBJECTS)
-    @given(ts.dns_names(), ts.pem_objects())
-    def test_unicode_keys(self, server_name, pem_objects):
+        with self.assertRaises(KeyError):
+            yield cert_store.get(u'example.com')
+
+    @defer.inlineCallbacks
+    def test_unicode_keys(self):
         """
         The keys of the dict returned by ``as_dict`` are ``unicode``.
         """
-        self.assertThat(
-            self.cert_store.store(server_name, pem_objects),
-            succeeded(Is(None)))
-        self.assertThat(
-            self.cert_store.as_dict(),
-            succeeded(AfterPreprocessing(
-                methodcaller('keys'),
-                AllMatch(IsInstance(unicode)))))
+        cert_store = self.getCertStore()
+
+        result = yield cert_store.store(
+            u'example.com', EXAMPLE_PEM_OBJECTS)
+        self.assertIsNone(result)
+
+        result = yield cert_store.as_dict()
+        self.assertEqual(['example.com'], list(result.keys()))
 
 
 class DirectoryStoreTests(_StoreTestsMixin, TestCase):
     """
     Tests for `txacme.store.DirectoryStore`.
     """
-    def setUp(self):
-        super(DirectoryStoreTests, self).setUp()
-        temp_dir = self.useFixture(TempDir())
-        self.cert_store = DirectoryStore(FilePath(temp_dir.path))
+
+    def getCertStore(self):
+        """
+        Return the certificate store for these tests.
+        """
+        # FIXME
+        # rever to trial mktemp.
+        tmpdir = tempfile.mkdtemp()
+        subdir = os.path.join(tmpdir, self._testMethodName)
+        os.mkdir(subdir)
+        self.addCleanup(shutil.rmtree, tmpdir)
+
+        return DirectoryStore(FilePath(tmpdir))
 
     def test_filepath_mode(self):
         """
         The given ``FilePath`` is always converted to text mode.
         """
         store = DirectoryStore(FilePath(b'bytesbytesbytes'))
-        self.assertThat(store.path.path, IsInstance(unicode))
+        self.assertIsInstance(store.path.path, unicode)
 
 
 class MemoryStoreTests(_StoreTestsMixin, TestCase):
     """
     Tests for `txacme.testing.MemoryStore`.
     """
-    def setUp(self):
-        super(MemoryStoreTests, self).setUp()
-        self.cert_store = MemoryStore()
+
+    def getCertStore(self):
+        """
+        Return the certificate store for these tests.
+        """
+        return MemoryStore()
 
 
 __all__ = ['DirectoryStoreTests', 'MemoryStoreTests']
