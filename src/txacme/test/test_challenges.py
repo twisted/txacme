@@ -2,13 +2,13 @@
 Tests for `txacme.challenges`.
 """
 from operator import methodcaller
-from unittest import TestCase
 
 from acme import challenges
 from josepy.b64 import b64encode
 from treq.testing import StubTreq
 from twisted._threads import createMemoryWorker
 from twisted.internet import defer
+from twisted.trial.unittest import TestCase
 
 from twisted.python.url import URL
 from twisted.web.resource import Resource

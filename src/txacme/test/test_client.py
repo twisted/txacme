@@ -26,9 +26,8 @@ from twisted.test.proto_helpers import MemoryReactor
 from twisted.web import http, server
 from twisted.web.resource import Resource
 from twisted.web.http_headers import Headers
+from twisted.trial.unittest import TestCase
 from zope.interface import implementer
-
-from unittest import TestCase
 
 from txacme.client import (
     _default_client, _find_supported_challenge, _parse_header_links,
