@@ -6,8 +6,8 @@ txacme: A Twisted implementation of the ACME protocol
    :target: http://txacme.readthedocs.org/en/stable/?badge=stable
    :alt: Documentation Status
 
-.. image:: https://travis-ci.org/twisted/txacme.svg?branch=master
-   :target: https://travis-ci.org/twisted/txacme
+.. image:: https://github.com/twisted/txacme/actions/workflows/test.yaml/badge.svg
+   :target: https://github.com/twisted/txacme/actions/workflows/test.yaml
    :alt: CI status
 
 .. image:: https://codecov.io/github/twisted/txacme/coverage.svg?branch=master
