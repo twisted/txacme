@@ -29,37 +29,30 @@ def generate_private_key(key_type):
     raise ValueError(key_type)
 
 
-def generate_tls_sni_01_cert(server_name, key_type=u'rsa',
-                             _generate_private_key=None):
+def load_or_create_client_key(pem_path):
     """
-    Generate a certificate/key pair for responding to a tls-sni-01 challenge.
+    Load the client key from a directory, creating it if it does not exist.
 
-    :param str server_name: The SAN the certificate should have.
-    :param str key_type: The type of key to generate; usually not necessary.
+    .. note:: The client key that will be created will be a 2048-bit RSA key.
 
-    :rtype: ``Tuple[`~cryptography.x509.Certificate`, PrivateKey]``
-    :return: A tuple of the certificate and private key.
+    :type pem_path: ``twisted.python.filepath.FilePath``
+    :param pem_path: The certificate directory
+        to use, as with the endpoint.
     """
-    key = (_generate_private_key or generate_private_key)(key_type)
-    name = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, u'acme.invalid')])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .not_valid_before(datetime.now() - timedelta(seconds=3600))
-        .not_valid_after(datetime.now() + timedelta(seconds=3600))
-        .serial_number(int(uuid.uuid4()))
-        .public_key(key.public_key())
-        .add_extension(
-            x509.SubjectAlternativeName([x509.DNSName(server_name)]),
-            critical=False)
-        .sign(
-            private_key=key,
-            algorithm=hashes.SHA256(),
+    acme_key_file = pem_path.asTextMode().child(u'client.key')
+    if acme_key_file.exists():
+        key = serialization.load_pem_private_key(
+            acme_key_file.getContent(),
+            password=None,
             backend=default_backend())
-        )
-    return (cert, key)
+    else:
+        key = generate_private_key(u'rsa')
+        acme_key_file.setContent(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()))
+    return JWKRSA(key=key)
 
 
 def tap(f):

@@ -10,3 +10,11 @@ source =
     src/txacme
     .tox/*/lib/python*/site-packages/txacme
     .tox/*/site-packages/txacme
+
+[report]
+precision = 2
+ignore_errors = True
+exclude_lines =
+    if TYPE_CHECKING
+    \s*\.\.\.$
+    raise NotImplementedError

@@ -1,20 +1,18 @@
 from datetime import timedelta
 from functools import partial
 
-from acme import messages
 import attr
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from pem import Certificate, Key
+import pem
 from twisted.application.internet import TimerService
 from twisted.application.service import Service
-from twisted.internet.defer import Deferred, gatherResults, succeed
+from twisted.internet import defer
 from twisted.logger import Logger
 
-from txacme.client import answer_challenge, fqdn_identifier, poll_until_valid
-from txacme.messages import CertificateRequest
-from txacme.util import clock_now, csr_for_names, generate_private_key, tap
+from txacme.client import answer_challenge, get_certificate
+from txacme.util import clock_now, generate_private_key, tap
 
 
 log = Logger()
@@ -81,6 +79,11 @@ class AcmeIssuingService(Service):
     _waiting = attr.ib(default=attr.Factory(list), init=False)
     _issuing = attr.ib(default=attr.Factory(dict), init=False)
     ready = False
+    # Service used to repeatedly call the certificate check and renewal.
+    _timer_service = None
+    # Deferred of the current certificates check.
+    # Added to help the automated testing.
+    _ongoing_check = None
 
     def _now(self):
         """
@@ -98,17 +101,18 @@ class AcmeIssuingService(Service):
         def check(certs):
             panicing = set()
             expiring = set()
-            for server_name, objects in certs.items():
+            for server_names, objects in certs.items():
                 if len(objects) == 0:
-                    panicing.add(server_name)
-                for o in filter(lambda o: isinstance(o, Certificate), objects):
+                    panicing.add(server_names)
+                for o in filter(
+                        lambda o: isinstance(o, pem.Certificate), objects):
                     cert = x509.load_pem_x509_certificate(
                         o.as_bytes(), default_backend())
                     until_expiry = cert.not_valid_after - self._now()
                     if until_expiry <= self.panic_interval:
-                        panicing.add(server_name)
+                        panicing.add(server_names)
                     elif until_expiry <= self.reissue_interval:
-                        expiring.add(server_name)
+                        expiring.add(server_names)
 
             log.info(
                 'Found {panicing_count:d} overdue / expired and '
@@ -117,21 +121,21 @@ class AcmeIssuingService(Service):
                 expiring_count=len(expiring))
 
             d1 = (
-                gatherResults(
-                    [self._issue_cert(server_name)
-                     .addErrback(self._panic, server_name)
-                     for server_name in panicing],
+                defer.gatherResults(
+                    [self._issue_cert(server_names)
+                     .addErrback(self._panic, server_names)
+                     for server_names in panicing],
                     consumeErrors=True)
                 .addCallback(done_panicing))
-            d2 = gatherResults(
-                [self.issue_cert(server_name)
+            d2 = defer.gatherResults(
+                [self.issue_cert(server_names)
                  .addErrback(
                      lambda f: log.failure(
-                         u'Error issuing certificate for: {server_name!r}',
-                         f, server_name=server_name))
-                 for server_name in expiring],
+                         u'Error issuing certificate for: {server_names!r}',
+                         f, server_names=server_names))
+                 for server_names in expiring],
                 consumeErrors=True)
-            return gatherResults([d1, d2], consumeErrors=True)
+            return defer.gatherResults([d1, d2], consumeErrors=True)
 
         def done_panicing(ignored):
             self.ready = True
@@ -139,118 +143,105 @@ class AcmeIssuingService(Service):
                 d.callback(None)
             self._waiting = []
 
-        return (
-            self._ensure_registered()
-            .addCallback(lambda _: self.cert_store.as_dict())
+        self._ongoing_check = (
+            self.cert_store.as_dict()
             .addCallback(check)
             .addErrback(
                 lambda f: log.failure(
                     u'Error in scheduled certificate check.', f)))
+        return self._ongoing_check
 
-    def issue_cert(self, server_name):
+    def issue_cert(self, server_names):
         """
-        Issue a new cert for a particular name.
+        Issue a new cert for a particular list of FQDNs.
 
         If an existing cert exists, it will be replaced with the new cert.  If
         issuing is already in progress for the given name, a second issuing
         process will *not* be started.
 
-        :param str server_name: The name to issue a cert for.
+        :param str server_names: The comma separated list of names to issue a
+            cert for.
 
         :rtype: ``Deferred``
         :return: A deferred that fires when issuing is complete.
         """
+        canonical_names = self._canonicalNames(server_names)
+
         def finish(result):
-            _, waiting = self._issuing.pop(server_name)
+            _, waiting = self._issuing.pop(canonical_names)
             for d in waiting:
                 d.callback(result)
 
         # d_issue is assigned below, in the conditional, since we may be
         # creating it or using the existing one.
-        d = Deferred(lambda _: d_issue.cancel())
-        if server_name in self._issuing:
-            d_issue, waiting = self._issuing[server_name]
+        d = defer.Deferred(lambda _: d_issue.cancel())
+        if canonical_names in self._issuing:
+            d_issue, waiting = self._issuing[canonical_names]
             waiting.append(d)
         else:
-            d_issue = self._issue_cert(server_name)
+            d_issue = self._issue_cert(canonical_names)
             waiting = [d]
-            self._issuing[server_name] = (d_issue, waiting)
+            self._issuing[canonical_names] = (d_issue, waiting)
             # Add the callback afterwards in case we're using a client
             # implementation that isn't actually async
             d_issue.addBoth(finish)
         return d
 
-    def _issue_cert(self, server_name):
+    @staticmethod
+    def _canonicalNames(server_names):
         """
-        Issue a new cert for a particular name.
+        Return the canonical representation for `server_names`.
         """
+        names = [n.strip() for n in server_names.split(',')]
+        return ','.join(names)
+
+    def _issue_cert(self, server_names):
+        """
+        Issue a new cert for the list of server_names.
+
+        `server_names` is already canonized.
+        """
+        names = [n.strip() for n in server_names.split(',')]
+
         log.info(
-            'Requesting a certificate for {server_name!r}.',
-            server_name=server_name)
+            'Requesting a certificate for {server_names!r}.',
+            server_names=server_names)
         key = self._generate_key()
         objects = [
-            Key(key.private_bytes(
+            pem.Key(key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()))]
 
-        def answer_and_poll(authzr):
-            def got_challenge(stop_responding):
-                return (
-                    poll_until_valid(authzr, self._clock, self._client)
-                    .addBoth(tap(lambda _: stop_responding())))
-            return (
-                answer_challenge(authzr, self._client, self._responders)
-                .addCallback(got_challenge))
+        @defer.inlineCallbacks
+        def answer_to_order(orderr):
+            """
+            Answer the challenges associated with the order.
+            """
+            for authorization in orderr.authorizations:
+                yield answer_challenge(
+                    authorization,
+                    self._client,
+                    self._responders,
+                    clock=self._clock,
+                )
+            certificate = yield get_certificate(
+                orderr, self._client, clock=self._clock)
+            defer.returnValue(certificate)
 
         def got_cert(certr):
-            objects.append(
-                Certificate(
-                    x509.load_der_x509_certificate(
-                        certr.body, default_backend())
-                    .public_bytes(serialization.Encoding.PEM)))
-            return certr
-
-        def got_chain(chain):
-            for certr in chain:
-                got_cert(certr)
-            log.info(
-                'Received certificate for {server_name!r}.',
-                server_name=server_name)
-            return objects
+            """
+            Called when we got a certificate.
+            """
+            # The certificate is returned as chain.
+            objects.extend(pem.parse(certr.body))
+            self.cert_store.store(','.join(names), objects)
 
         return (
-            self._client.request_challenges(fqdn_identifier(server_name))
-            .addCallback(answer_and_poll)
-            .addCallback(lambda ign: self._client.request_issuance(
-                CertificateRequest(
-                    csr=csr_for_names([server_name], key))))
+            self._client.submit_order(key, names)
+            .addCallback(answer_to_order)
             .addCallback(got_cert)
-            .addCallback(self._client.fetch_chain)
-            .addCallback(got_chain)
-            .addCallback(partial(self.cert_store.store, server_name)))
-
-    def _ensure_registered(self):
-        """
-        Register if needed.
-        """
-        if self._registered:
-            return succeed(None)
-        else:
-            return self._register()
-
-    def _register(self):
-        """
-        Register and agree to the TOS.
-        """
-        def _registered(regr):
-            self._regr = regr
-            self._registered = True
-        regr = messages.NewRegistration.from_data(email=self._email)
-        return (
-            self._client.register(regr)
-            .addCallback(self._client.agree_to_tos)
-            .addCallback(_registered))
+            )
 
     def when_certs_valid(self):
         """
@@ -268,30 +259,58 @@ class AcmeIssuingService(Service):
         :return: A deferred that fires once the initial check has resolved.
         """
         if self.ready:
-            return succeed(None)
-        d = Deferred()
+            return defer.succeed(None)
+        d = defer.Deferred()
         self._waiting.append(d)
         return d
 
-    def startService(self):
+    def start(self):
+        """
+        Like startService, but will return a deferred once the service was
+        started and operational.
+        """
         Service.startService(self)
-        self._registered = False
-        self._timer_service = TimerService(
-            self.check_interval.total_seconds(), self._check_certs)
-        self._timer_service.clock = self._clock
-        self._timer_service.startService()
+
+        def cb_start(result):
+            """
+            Called when the client is ready for operation.
+            """
+            self._timer_service = TimerService(
+                self.check_interval.total_seconds(), self._check_certs)
+            self._timer_service.clock = self._clock
+            self._timer_service.startService()
+
+        return self._client.start(email=self._email).addCallback(cb_start)
+
+    def startService(self):
+        """
+        Start operating the service.
+
+        See `when_certs_valid` if you want to be notified when all the
+        certificate from the storage were validated after startup.
+        """
+        self.start().addErrback(self._panic, 'FAIL-TO-START')
 
     def stopService(self):
         Service.stopService(self)
         self.ready = False
-        self._registered = False
         for d in list(self._waiting):
             d.cancel()
         self._waiting = []
 
-        deferred = self._client.stop()
-        deferred.addCallback(lambda _: self._timer_service.stopService())
-        return deferred
+        def stop_timer(ignored):
+            if not self._timer_service:
+                return
+            return self._timer_service.stopService()
+
+        def cleanup(ignored):
+            self._timer_service = None
+
+        return (
+            self._client.stop()
+            .addBoth(tap(stop_timer))
+            .addBoth(tap(cleanup))
+            )
 
 
 __all__ = ['AcmeIssuingService']

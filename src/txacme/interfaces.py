@@ -17,7 +17,7 @@ class IResponder(Interface):
         The type of challenge this responder is able to respond for.
 
         Must correspond to one of the types from `acme.challenges`; for
-        example, ``u'tls-sni-01'``.
+        example, ``u'http-01'``.
         """)
 
     def start_responding(server_name, challenge, response):

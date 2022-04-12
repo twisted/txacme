@@ -1,3 +1,7 @@
 ignore:
   - src/txacme/_version.py
   - src/txacme/interfaces.py
+
+status:
+  project: off
+  patch: off

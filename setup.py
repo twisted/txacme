@@ -1,6 +1,5 @@
 import os
 import codecs
-import versioneer
 from setuptools import setup, find_packages
 
 HERE = os.path.abspath(os.path.dirname(__file__))
@@ -12,8 +11,7 @@ def read(*parts):
 
 
 setup(
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    version='2.0.0.dev0',
     name='txacme',
     description='ACME protocol implementation for Twisted',
     license='Expat',
@@ -23,7 +21,7 @@ setup(
     maintainer='Tristan Seligmann',
     maintainer_email='mithrandi@mithrandi.net',
     long_description=read('README.rst'),
-    packages=find_packages(where='src') + ['twisted.plugins'],
+    packages=find_packages(where='src'),
     package_dir={'': 'src'},
     zip_safe=True,
     classifiers=[
@@ -45,7 +43,7 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
         ],
     install_requires=[
-        'acme>=0.21.0,<1.0.0',
+        'acme>=1.0.0',
         'attrs>=17.4.0',
         'eliot>=0.8.0',
         'josepy',
@@ -59,13 +57,9 @@ setup(
         'libcloud': [
             'apache-libcloud',
         ],
-        'test': [
-            'fixtures>=1.4.0',
-            'hypothesis>=4.0.0,<5.0.0',
-            'service_identity>=17.0.0',
-            'testrepository>=0.0.20',
-            'testscenarios',
-            'testtools>=2.1.0',
+        'dev': [
+            'coverage',
+            'eliot-tree',
             ],
         },
     )
