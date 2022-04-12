@@ -65,7 +65,7 @@ jobs:
 
     - name: Test
       run: |
-        trial txacme
+        coverage run -p --rcfile=.coveragerc -m twisted.trial txacme
 
     - name: Prepare coverage
       if: always()
