@@ -17,19 +17,12 @@ defaults:
 jobs:
   testing:
     runs-on: ubuntu-20.04
-    name: ${{ matrix.python-version }}-${{ matrix.tox-env }}
+    name: ${{ matrix.python-version }}-linux
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: 2.7
-            tox-env: py27
-          - python-version: 3.10
-            tox-env: py39
-          - python-version: pypy-3.7
-            tox-env: pypy3
+        python-version: ["2.7", "3.10", "pypy-3.7"]
     env:
-      TOXENV: "${{ matrix.tox-env }}"
       # As of April 2021 GHA VM have 2 CPUs - Azure Standard_DS2_v2
       # Trial distributed jobs enabled to speed up the CI jobs.
       TRIAL_ARGS: "-j 4"
@@ -65,10 +58,10 @@ jobs:
 
     - name: Test
       run: |
-        coverage run -p --rcfile=.coveragerc -m twisted.trial txacme
+        coverage run -p -m twisted.trial txacme
 
     - name: Prepare coverage
-      if: always()
+      if: ${{ !cancelled() }}
       run: |
         # sub-process coverage are generated in separate files so we combine them
         # to get an unified coverage for the local run.
@@ -76,9 +69,10 @@ jobs:
         python -m coverage combine
         python -m coverage xml -o coverage.xml -i
         python -m coverage report --skip-covered
+        ls -al
 
     - uses: codecov/codecov-action@v2
-      if: always()
+      if: ${{ !cancelled() }}
       with:
         files: coverage.xml
         name: lnx-${{ matrix.python-version }}
