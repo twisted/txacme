@@ -8,6 +8,12 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 defaults:
   run:
@@ -16,39 +22,27 @@ defaults:
 
 jobs:
   testing:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     name: ${{ matrix.python-version }}-linux
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["2.7", "3.10", "pypy-3.7"]
+        python-version: ["3.12", "pypy-3.7"]
     env:
       # As of April 2021 GHA VM have 2 CPUs - Azure Standard_DS2_v2
       # Trial distributed jobs enabled to speed up the CI jobs.
       TRIAL_ARGS: "-j 4"
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+      with:
+        # We use full dept for branch diff coverage.
+        fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-
-    - name: Get pip cache dir
-      id: pip-cache
-      run: |
-        echo "::set-output name=dir::$(pip cache dir)"
-
-    - name: pip cache
-      uses: actions/cache@v2
-      with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key:
-          ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml', 'setup.py',
-          'setup.cfg') }}
-        restore-keys: |
-            ${{ runner.os }}-pip-
 
     - uses: twisted/python-info-action@v1
     - name: Install dependencies
@@ -71,7 +65,12 @@ jobs:
         python -m coverage report --skip-covered
         ls -al
 
-    - uses: codecov/codecov-action@v2
+        # Check branch coverage.
+        diff-cover --markdown-report coverage-report.md --compare-branch origin/master coverage.xml
+          cat coverage-report.md >> $GITHUB_STEP_SUMMARY
+
+    - name: Publish to codecov.io
+      uses: codecov/codecov-action@v4
       if: ${{ !cancelled() }}
       with:
         files: coverage.xml

@@ -1,10 +1,11 @@
 [tool.isort]
-default_section=THIRDPARTY
-known_first_party=txacme
-multi_line_output=4
-lines_after_imports=2
-balanced_wrapping=True
-order_by_type=False
+
+default_section = 'THIRDPARTY'
+known_first_party = 'txacme'
+multi_line_output = 4
+lines_after_imports = 2
+balanced_wrapping = true
+order_by_type = false
 
 [tool.towncrier]
 package = 'txacme'
