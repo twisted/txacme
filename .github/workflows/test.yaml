@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "pypy-3.7"]
+        python-version: ["3.9", "3.13"]
     env:
       # As of April 2021 GHA VM have 2 CPUs - Azure Standard_DS2_v2
       # Trial distributed jobs enabled to speed up the CI jobs.

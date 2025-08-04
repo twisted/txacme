@@ -24,6 +24,7 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     zip_safe=True,
+    python_requires='>=3.9.2',
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
