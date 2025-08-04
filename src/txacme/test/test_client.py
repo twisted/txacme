@@ -37,7 +37,6 @@ from txacme.client import (
     get_certificate
 )
 from txacme.interfaces import IResponder
-from txacme.messages import CertificateRequest
 from txacme.testing import NullResponder
 from txacme.util import (
     csr_for_names, generate_private_key

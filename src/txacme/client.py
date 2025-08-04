@@ -80,6 +80,7 @@ from acme import errors, messages
 from acme.crypto_util import make_csr
 from acme.jws import JWS, Header
 from acme.messages import (
+    CertificateRequest,
     STATUS_PENDING,
     STATUS_VALID,
     STATUS_INVALID,
@@ -188,21 +189,6 @@ def fqdn_identifier(fqdn):
     """
     return messages.Identifier(
         typ=messages.IDENTIFIER_FQDN, value=fqdn)
-
-
-@messages.Directory.register
-class Finalize(jose.JSONObjectWithFields):
-    """
-    ACME order finalize request.
-
-    This is here as acme.messages.CertificateRequest does not work with
-    pebble in --strict mode.
-
-    :ivar josepy.util.ComparableX509 csr:
-        `OpenSSL.crypto.X509Req` wrapped in `.ComparableX509`
-    """
-    resource_type = 'finalize'
-    csr = jose.Field('csr', decoder=jose.decode_csr, encoder=jose.encode_csr)
 
 
 class Client(object):
@@ -544,10 +530,8 @@ class Client(object):
         :rtype: Deferred[`acme.messages.OrderResource`]
         :return: The issued certificate.
         """
-        csr = OpenSSL.crypto.load_certificate_request(
-            OpenSSL.crypto.FILETYPE_PEM, order.csr_pem
-        )
-        request = Finalize(csr=jose.ComparableX509(csr))
+        csr = x509.load_pem_x509_csr(order.csr_pem)
+        request = CertificateRequest(csr=csr)
         response = yield self._client.post(
             order.body.finalize, obj=request
         )
