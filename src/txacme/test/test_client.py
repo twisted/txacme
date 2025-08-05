@@ -1,86 +1,59 @@
+import os
 import json
+import unittest
 from contextlib import contextmanager
 from operator import attrgetter, methodcaller
 
 import attr
 
-from josepy.jwa import RS256, RS384
+from josepy.jwa import RS256
 from josepy.jwk import JWKRSA
 from josepy.jws import JWS
-from josepy.b64 import b64encode, b64decode
+from josepy.b64 import b64decode
 
-from acme import challenges, errors, messages
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
+from acme import errors, messages
 from cryptography.hazmat.primitives.asymmetric import rsa
-from treq.client import HTTPClient
 from treq.testing import RequestSequence as treq_RequestSequence
-from treq.testing import (
-    _SynchronousProducer, RequestTraversalAgent, StringStubbingResource)
 from twisted.internet import defer, reactor
-from twisted.internet.defer import Deferred, CancelledError, fail, succeed
-from twisted.internet.error import ConnectionClosed
-from twisted.internet.task import Clock
+from twisted.internet.interfaces import IOpenSSLClientConnectionCreator
 from twisted.python.url import URL
-from twisted.test.proto_helpers import MemoryReactor
-from twisted.web import http, server
-from twisted.web.resource import Resource
+from twisted.web import http
+from twisted.web.client import Agent, BrowserLikePolicyForHTTPS
 from twisted.web.http_headers import Headers
 from twisted.trial.unittest import TestCase
 from zope.interface import implementer
+from OpenSSL import SSL
 
 from txacme.client import (
-    _default_client, _find_supported_challenge, _parse_header_links,
-    answer_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
-    fqdn_identifier, JSON_CONTENT_TYPE, JOSE_CONTENT_TYPE,
-    JSON_ERROR_CONTENT_TYPE, JWSClient, NoSupportedChallenges, ServerError,
-    get_certificate
+    _parse_header_links,
+    Client,
+    fqdn_identifier,
+    JSON_CONTENT_TYPE,
+    JSON_ERROR_CONTENT_TYPE,
+    JWSClient,
+    ServerError,
 )
 from txacme.interfaces import IResponder
-from txacme.messages import CertificateRequest
-from txacme.testing import NullResponder
-from txacme.util import (
-    csr_for_names, generate_private_key
-)
+
+
+# URL to the pebble directory.
+PEBBLE_URL = os.environ.get('PEBBLE_URL', '')
+if PEBBLE_URL:
+    PEBBLE_URL = URL.from_text(PEBBLE_URL)
 
 
 def failed_with(matcher):
     return failed(AfterPreprocessing(attrgetter('value'), matcher))
 
 
-# from cryptography:
-
-RSA_KEY_512_RAW = rsa.RSAPrivateNumbers(
-    p=int(
-        "d57846898d5c0de249c08467586cb458fa9bc417cdf297f73cfc52281b787cd9", 16
-    ),
-    q=int(
-        "d10f71229e87e010eb363db6a85fd07df72d985b73c42786191f2ce9134afb2d", 16
-    ),
-    d=int(
-        "272869352cacf9c866c4e107acc95d4c608ca91460a93d28588d51cfccc07f449"
-        "18bbe7660f9f16adc2b4ed36ca310ef3d63b79bd447456e3505736a45a6ed21", 16
-    ),
-    dmp1=int(
-        "addff2ec7564c6b64bc670d250b6f24b0b8db6b2810099813b7e7658cecf5c39", 16
-    ),
-    dmq1=int(
-        "463ae9c6b77aedcac1397781e50e4afc060d4b216dc2778494ebe42a6850c81", 16
-    ),
-    iqmp=int(
-        "54deef8548f65cad1d411527a32dcb8e712d3e128e4e0ff118663fae82a758f4", 16
-    ),
-    public_numbers=rsa.RSAPublicNumbers(
-        e=65537,
-        n=int(
-            "ae5411f963c50e3267fafcf76381c8b1e5f7b741fdb2a544bcf48bd607b10c991"
-            "90caeb8011dc22cf83d921da55ec32bd05cac3ee02ca5e1dbef93952850b525",
-            16
-        ),
-    )
-).private_key(default_backend())
-
-RSA_KEY_512 = JWKRSA(key=RSA_KEY_512_RAW)
+# We generate a new RSA key for each test run.
+# This will make sure that we don't already have an account on the
+# ACME server.
+# Let's Encrypt staging only supports keys of minimum 2048
+RSA_TEST_KEY = JWKRSA(key=rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+    ))
 
 
 class RequestSequence(treq_RequestSequence):
@@ -145,7 +118,7 @@ class TestResponse(object):
     code = attr.ib(default=http.OK)
     content_type = attr.ib(default=JSON_CONTENT_TYPE)
     nonce = attr.ib(default=None)
-    json = attr.ib(default=lambda: succeed({}))
+    json = attr.ib(default=lambda: defer.succeed({}))
     links = attr.ib(default=None)
 
     @property
@@ -184,7 +157,7 @@ class ClientTests(TestCase):
         """
         with self.assertRaises(TypeError):
             yield Client.from_url(
-                reactor, '/wrong/kind/of/directory', key=RSA_KEY_512)
+                reactor, '/wrong/kind/of/directory', key=RSA_TEST_KEY)
 
     def test_fqdn_identifier(self):
         """
@@ -239,7 +212,7 @@ class JWSClientTests(TestCase):
         response = TestResponse(
             code=http.FORBIDDEN,
             content_type=JSON_ERROR_CONTENT_TYPE,
-            json=lambda: succeed({
+            json=lambda: defer.succeed({
                 u'type': u'unauthorized',
                 u'detail': u'blah blah blah'}))
 
@@ -273,4 +246,108 @@ class LinkParsingTests(TestCase):
             result)
 
 
-__all__ = ['ClientTests', 'ExtraCoverageTests', 'LinkParsingTests']
+@unittest.skipIf(not PEBBLE_URL, 'Pebble tests enabled')
+class PebbleTests(TestCase):
+    """
+    :class:`.Client` end to end test using Pebble over localhost.
+    """
+
+    @defer.inlineCallbacks
+    def test_directory_lets_encrypt_staging(self):
+        """
+        Can start the client with the public Let's Encrypt staging URL.
+        """
+        client = yield Client.from_url(
+            reactor,
+            URL.from_text('https://acme-staging-v02.api.letsencrypt.org/directory'),
+            key=RSA_TEST_KEY,
+            )
+        registration = yield client.start()
+
+        self.assertIn(
+            'https://acme-staging-v02.api.letsencrypt.org/acme/acct/',
+            registration.uri)
+
+        # Close any cached connection.
+        yield client.stop()
+
+    @defer.inlineCallbacks
+    def test_directory_pebble_testing(self):
+        """
+        Can start the client with the public Let's Encrypt staging URL.
+        """
+        agent = Agent(reactor, contextFactory=UnsafePolicyForHTTPS())
+        jws_client = JWSClient(agent, key=RSA_TEST_KEY, alg=RS256)
+        client = yield Client.from_url(
+            reactor,
+            PEBBLE_URL,
+            key=RSA_TEST_KEY,
+            jws_client=jws_client,
+            )
+        # This will register the new account.
+        registration = yield client.start()
+
+        # Minimal checks for the new account.
+        account_uri = registration.uri
+        self.assertIn('/my-account/', registration.uri)
+
+        # Stop can be triggered multiple times.
+        yield client.stop()
+        yield client.stop()
+
+        agent = Agent(reactor, contextFactory=UnsafePolicyForHTTPS())
+        jws_client = JWSClient(agent, key=RSA_TEST_KEY, alg=RS256)
+        client = yield Client.from_url(
+            reactor,
+            PEBBLE_URL,
+            key=RSA_TEST_KEY,
+            jws_client=jws_client,
+            )
+
+        registration = yield client.start()
+        self.assertEqual(account_uri, registration.uri)
+
+        # Trigger the closing of TCP connections.
+        yield client.stop()
+
+
+class UnsafePolicyForHTTPS(BrowserLikePolicyForHTTPS):
+    """
+    Policy to help with testing.
+    Doesn't validated the server certificate.
+
+    This is to be used with the pebble server.
+    """
+    def __init__(self):
+        self._ssl_context = SSL.Context(SSL.SSLv23_METHOD)
+
+    def creatorForNetloc(self, hostname, port):
+        """
+        Create a L{client connection creator
+        <twisted.internet.interfaces.IOpenSSLClientConnectionCreator>} for a
+        given network location.
+        """
+        return UnsafeClientTLSOptions(
+            hostname=hostname.decode("ascii"),
+            ctx=self._ssl_context,
+            )
+
+
+@implementer(IOpenSSLClientConnectionCreator)
+class UnsafeClientTLSOptions:
+    """
+    Client creator for TLS with SNI but without server validation
+    """
+
+    def __init__(self, hostname, ctx):
+        self._hostname = hostname
+        self._ctx = ctx
+
+    def clientConnectionForTLS(self, tlsProtocol):
+        """
+        Create a TLS connection for a client.
+        """
+        connection = SSL.Connection(self._ctx, None)
+        server_name = self._hostname.encode('utf-8')
+        connection.set_tlsext_host_name(server_name)
+        return connection

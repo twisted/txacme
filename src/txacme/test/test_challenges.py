@@ -1,12 +1,8 @@
 """
 Tests for `txacme.challenges`.
 """
-from operator import methodcaller
-
 from acme import challenges
-from josepy.b64 import b64encode
 from treq.testing import StubTreq
-from twisted._threads import createMemoryWorker
 from twisted.internet import defer
 from twisted.trial.unittest import TestCase
 
@@ -15,9 +11,8 @@ from twisted.web.resource import Resource
 from zope.interface.verify import verifyObject
 
 from txacme.challenges import HTTP01Responder
-from txacme.errors import NotInZone, ZoneNotFound
 from txacme.interfaces import IResponder
-from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
+from txacme.test.test_client import RSA_TEST_KEY
 
 
 # A random example token for the challenge tests that need one
@@ -45,7 +40,7 @@ class HTTPResponderTests(TestCase):
         """
         token = EXAMPLE_TOKEN
         challenge = challenges.HTTP01(token=token)
-        response = challenge.response(RSA_KEY_512)
+        response = challenge.response(RSA_TEST_KEY)
         responder = HTTP01Responder()
 
         yield responder.stop_responding(
@@ -60,7 +55,7 @@ class HTTPResponderTests(TestCase):
         """
         token = b'BWYcfxzmOha7-7LoxziqPZIUr99BCz3BfbN9kzSFnrU'
         challenge = challenges.HTTP01(token=token)
-        response = challenge.response(RSA_KEY_512)
+        response = challenge.response(RSA_TEST_KEY)
 
         responder = HTTP01Responder()
 

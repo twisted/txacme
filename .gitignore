@@ -1,6 +1,7 @@
 *.egg-info/
 *.pyc
 .coverage
+coverage.xml
 .hypothesis/
 .testrepository/
 .tox/

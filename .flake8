@@ -1,0 +1,5 @@
+
+
+[flake8]
+exclude=src/txacme/_version.py,src/txacme/interfaces.py
+ignore_names=setUp,_setUp,tearDown,startService,stopService

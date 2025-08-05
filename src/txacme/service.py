@@ -3,7 +3,6 @@ from functools import partial
 
 import attr
 from cryptography import x509
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 import pem
 from twisted.application.internet import TimerService
@@ -107,7 +106,7 @@ class AcmeIssuingService(Service):
                 for o in filter(
                         lambda o: isinstance(o, pem.Certificate), objects):
                     cert = x509.load_pem_x509_certificate(
-                        o.as_bytes(), default_backend())
+                        o.as_bytes())
                     until_expiry = cert.not_valid_after - self._now()
                     if until_expiry <= self.panic_interval:
                         panicing.add(server_names)

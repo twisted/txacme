@@ -1,21 +1,7 @@
-from codecs import decode
-
-import attr
-from OpenSSL import crypto
-from acme import challenges
-from josepy.b64 import b64encode
-from josepy.errors import DeserializationError
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
-from service_identity.pyopenssl import verify_hostname
 from twisted.trial.unittest import TestCase
 
-from txacme.test.test_client import RSA_KEY_512, RSA_KEY_512_RAW
-from txacme.util import (
-    const, csr_for_names, decode_csr, encode_csr,
-    generate_private_key)
+from txacme.util import (generate_private_key)
 
 
 class GeneratePrivateKeyTests(TestCase):
