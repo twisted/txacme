@@ -247,34 +247,23 @@ class Client(object):
         return self._client.stop()
 
     @defer.inlineCallbacks
-    def start(self, email=None):
+    def start(self):
         """
-        Create a new registration with the ACME server or update
-        an existing account.
+        Prepare the client for communicating with the ACME server.
 
-        It should be called before doing any ACME requests.
-
-        :param str: Comma separated contact emails used by the account.
+        If there is no account for the key, it creates a new registration with
+        the ACME server.
 
         :return: The registration resource.
         :rtype: Deferred[`~acme.messages.RegistrationResource`]
         """
         uri = self.directory.newAccount
         new_reg = messages.Registration.from_data(
-            email=email,
             terms_of_service_agreed=True,
             )
         response = yield self._client.post(uri, new_reg)
 
-        if response.code == 200 and new_reg.contact:
-            # Account already exists and we email address to update.
-            # I don't know how to remove a contact.
-            uri = self._maybe_location(response)
-            update_response = yield self._client.post(uri, new_reg, kid=uri)
-            registration = yield self._parse_registration_response(
-                update_response, uri=uri)
-        else:
-            registration = yield self._parse_registration_response(response)
+        registration = yield self._parse_registration_response(response)
 
         if registration.body.key != self.key.public_key():
             # This is a response for another key.
@@ -325,7 +314,6 @@ class Client(object):
                     uri=self._maybe_location(response, uri),
                     terms_of_service=terms_of_service))
             )
-
 
     @defer.inlineCallbacks
     def submit_order(self, key, names):
