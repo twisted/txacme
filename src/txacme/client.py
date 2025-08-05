@@ -156,7 +156,7 @@ def _parse_header_links(response):
         return links
 
 
-def _default_client(jws_client, reactor, key, alg, timeout):
+def _default_jws_client(jws_client, reactor, key, alg, timeout):
     """
     Make a client if we didn't get one.
     """
@@ -229,7 +229,7 @@ class Client(object):
         @defer.inlineCallbacks
         def setup_client():
             check_directory_url_type(url)
-            client = _default_client(
+            client = _default_jws_client(
                 jws_client, reactor, key, alg, timeout)
             directory = yield client.start(url.asText())
             return cls(directory, reactor, key, client)
@@ -804,7 +804,7 @@ class JWSClient(object):
 
     def _cb_wrap_in_jws(self, nonce, obj, url, kid=None):
         """
-        Callebacak to wrap ``JSONDeSerializable`` object in ACME JWS.
+        Callback to wrap ``JSONDeSerializable`` object in ACME JWS.
 
         :param ~josepy.interfaces.JSONDeSerializable obj:
         :param bytes nonce:

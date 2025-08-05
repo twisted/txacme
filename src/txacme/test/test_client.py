@@ -25,16 +25,16 @@ from zope.interface import implementer
 from OpenSSL import SSL
 
 from txacme.client import (
-    _default_client, _find_supported_challenge, _parse_header_links,
-    answer_challenge, AuthorizationFailed, Client, DER_CONTENT_TYPE,
-    fqdn_identifier, JSON_CONTENT_TYPE, JOSE_CONTENT_TYPE,
-    JSON_ERROR_CONTENT_TYPE, JWSClient, NoSupportedChallenges, ServerError,
-    get_certificate
+    _parse_header_links,
+    Client,
+    fqdn_identifier,
+    JSON_CONTENT_TYPE,
+    JSON_ERROR_CONTENT_TYPE,
+    JWSClient,
+    ServerError,
 )
 from txacme.interfaces import IResponder
-from txacme.util import (
-    csr_for_names, generate_private_key
-)
+
 
 # URL to the pebble directory.
 PEBBLE_URL = os.environ.get('PEBBLE_URL', '')
