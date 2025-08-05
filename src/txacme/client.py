@@ -90,7 +90,7 @@ import josepy as jose
 from josepy.jwa import RS256
 from josepy.errors import DeserializationError
 
-import OpenSSL
+from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
 from eliot.twisted import DeferredContext
@@ -105,8 +105,6 @@ from twisted.web.http_headers import Headers
 from txacme import __version__
 from txacme.logging import (
     LOG_ACME_ANSWER_CHALLENGE,
-    LOG_ACME_CONSUME_DIRECTORY,
-    LOG_ACME_REGISTER,
     LOG_HTTP_PARSE_LINKS,
     LOG_JWS_ADD_NONCE,
     LOG_JWS_CHECK_RESPONSE,
@@ -158,22 +156,18 @@ def _parse_header_links(response):
         return links
 
 
-def _default_client(jws_client, reactor, key, alg, directory, timeout):
+def _default_client(jws_client, reactor, key, alg, timeout):
     """
     Make a client if we didn't get one.
     """
     if jws_client is None:
         pool = HTTPConnectionPool(reactor)
         agent = Agent(reactor, pool=pool)
-        jws_d = JWSClient.from_directory(agent, key, alg, directory)
-    else:
-        jws_d = defer.succeed(jws_client)
+        jws_client = JWSClient(agent, key, alg)
 
-    def set_timeout(jws_client):
-        jws_client.timeout = timeout
-        return jws_client
+    jws_client.timeout = timeout
+    return jws_client
 
-    return jws_d.addCallback(set_timeout)
 
 
 def fqdn_identifier(fqdn):
@@ -232,21 +226,15 @@ class Client(object):
         :return: The constructed client.
         :rtype: Deferred[`Client`]
         """
-        action = LOG_ACME_CONSUME_DIRECTORY(
-            url=url, key_type=key.typ, alg=alg.name)
-        with action.context():
+        @defer.inlineCallbacks
+        def setup_client():
             check_directory_url_type(url)
-            directory = url.asText()
-            return (
-                DeferredContext(jws_client=_default_client(
-                    jws_client, reactor, key, alg, directory, timeout
-                ))
-                .addCallback(
-                    tap(lambda jws_client:
-                        action.add_success_fields(directory=directory)))
-                .addCallback(lambda jws_client: cls(reactor, key, jws_client))
-                .addActionFinish()
-            )
+            client = _default_client(
+                jws_client, reactor, key, alg, timeout)
+            directory = yield client.start(url.asText())
+            return cls(directory, reactor, key, client)
+
+        return setup_client()
 
     def stop(self):
         """
@@ -258,7 +246,8 @@ class Client(object):
         """
         return self._client.stop()
 
-    def register(self, email=None):
+    @defer.inlineCallbacks
+    def start(self, email=None):
         """
         Create a new registration with the ACME server or update
         an existing account.
@@ -275,16 +264,28 @@ class Client(object):
             email=email,
             terms_of_service_agreed=True,
             )
-        action = LOG_ACME_REGISTER(registration=new_reg)
-        with action.context():
-            return (
-                DeferredContext(
-                    self._client.post(uri, new_reg))
-                .addCallback(self._cb_check_existing_account, new_reg)
-                .addCallback(self._cb_check_registration)
-                .addCallback(
-                    tap(lambda r: action.add_success_fields(registration=r)))
-                .addActionFinish())
+        response = yield self._client.post(uri, new_reg)
+
+        if response.code == 200 and new_reg.contact:
+            # Account already exists and we email address to update.
+            # I don't know how to remove a contact.
+            uri = self._maybe_location(response)
+            update_response = yield self._client.post(uri, new_reg, kid=uri)
+            registration = yield self._parse_registration_response(
+                update_response, uri=uri)
+        else:
+            registration = yield self._parse_registration_response(response)
+
+        if registration.body.key != self.key.public_key():
+            # This is a response for another key.
+            raise errors.UnexpectedUpdate(registration)
+
+        if registration.body.status != 'valid':
+            raise errors.UnexpectedUpdate(registration)
+
+        self._client.kid = registration.uri
+
+        return registration
 
     def stop(self):
         """
@@ -307,22 +308,7 @@ class Client(object):
             return location.decode('ascii')
         return uri
 
-    def _cb_check_existing_account(self, response, request):
-        """
-        Get the response from the account registration and see if the
-        account is already registered and do an update in that case.
-        """
-        if response.code == 200 and request.contact:
-            # Account already exists and we email address to update.
-            # I don't know how to remove a contact.
-            uri = self._maybe_location(response)
-            deferred = self._client.post(uri, request, kid=uri)
-            deferred.addCallback(self._cb_parse_registration_response, uri=uri)
-            return deferred
-
-        return self._cb_parse_registration_response(response)
-
-    def _cb_parse_registration_response(self, response, uri=None):
+    def _parse_registration_response(self, response, uri=None):
         """
         Parse a new or update registration response from the server.
         """
@@ -340,21 +326,6 @@ class Client(object):
                     terms_of_service=terms_of_service))
             )
 
-    def _cb_check_registration(self, regr):
-        """
-        Check that a registration response contains the registration we were
-        expecting.
-        """
-        if regr.body.key != self.key.public_key():
-            # This is a response for another key.
-            raise errors.UnexpectedUpdate(regr)
-
-        if regr.body.status != 'valid':
-            raise errors.UnexpectedUpdate(regr)
-
-        self._client.kid = regr.uri
-
-        return regr
 
     @defer.inlineCallbacks
     def submit_order(self, key, names):
@@ -808,7 +779,7 @@ class JWSClient(object):
     """
     timeout = _DEFAULT_TIMEOUT
 
-    def __init__(self, agent, key, alg, new_nonce_url, kid,
+    def __init__(self, agent, key, alg,
                  user_agent=u'txacme/{}'.format(__version__).encode('ascii')):
         self._treq = HTTPClient(agent=agent)
         self._agent = agent
@@ -818,37 +789,51 @@ class JWSClient(object):
         self._user_agent = user_agent
 
         self._nonces = set()
-        self._new_nonce = new_nonce_url
-        self._kid = kid
+        # URL from where a new nonce can be obtained.
+        # This is set at start time.
+        self._new_nonce = None
+        self._kid = None
 
-    @classmethod
-    def from_directory(cls, agent, key, alg, directory):
+    @property
+    def kid(self):
+        return self._kid
+
+    @kid.setter
+    def kid(self, value):
+        self._kid = value
+
+    def _cb_wrap_in_jws(self, nonce, obj, url, kid=None):
         """
-        Prepare for ACME operations based on 'directory' url.
+        Callebacak to wrap ``JSONDeSerializable`` object in ACME JWS.
 
-        :param str directory: The URL to the ACME v2 directory.
+        :param ~josepy.interfaces.JSONDeSerializable obj:
+        :param bytes nonce:
+        :param bytes url: URL to the request for which we wrap the payload.
 
-        :return: When operation is done.
-        :rtype: Deferred[None]
+        :rtype: `bytes`
+        :return: JSON-encoded data
         """
-        # Provide invalid new_nonce_url & kid, but don't expose it to the
-        # caller.
-        self = cls(agent, key, alg, None, None)
+        if kid is None:
+            kid = self._kid
 
-        def cb_extract_new_nonce(directory):
-            try:
-                self._new_nonce = directory.newNonce
-            except AttributeError:
-                raise errors.ClientError(
-                    'Directory has no newNonce URL', directory)
-
-            return directory
-        return (
-            self.get(directory)
-            .addCallback(json_content)
-            .addCallback(messages.Directory.from_json)
-            .addCallback(cb_extract_new_nonce)
-        )
+        with LOG_JWS_SIGN(key_type=self._key.typ, alg=self._alg.name,
+                          nonce=nonce, kid=kid):
+            if obj is None:
+                jobj = b''
+            else:
+                jobj = obj.json_dumps().encode()
+            result = (
+                JWS.sign(
+                    payload=jobj,
+                    key=self._key,
+                    alg=self._alg,
+                    nonce=nonce,
+                    url=url,
+                    kid=kid,
+                    )
+                .json_dumps()
+                .encode())
+            return result
 
     @classmethod
     def _check_response(cls, response, content_type=JSON_CONTENT_TYPE):
@@ -942,6 +927,30 @@ class JWSClient(object):
                         content_type=r.headers.getRawHeaders(
                             b'content-type', [None])[0])))
                 .addActionFinish())
+
+    def start(self, directory):
+        """
+        Prepare for ACME operations based on 'directory' url.
+
+        :param str directory: The URL to the ACME v2 directory.
+
+        :return: When operation is done.
+        :rtype: Deferred[None]
+        """
+        def cb_extract_new_nonce(directory):
+            try:
+                self._new_nonce = directory.newNonce
+            except AttributeError:
+                raise errors.ClientError(
+                    'Directory has no newNonce URL', directory)
+
+            return directory
+        return (
+            self.get(directory)
+            .addCallback(json_content)
+            .addCallback(messages.Directory.from_json)
+            .addCallback(cb_extract_new_nonce)
+            )
 
     def stop(self):
         """
@@ -1062,32 +1071,12 @@ class JWSClient(object):
         if kid is None:
             kid = self._kid
 
-        def cb_wrap_in_jws(nonce):
-            with LOG_JWS_SIGN(key_type=self._key.typ, alg=self._alg.name,
-                              nonce=nonce):
-                if obj is None:
-                    jobj = b''
-                else:
-                    jobj = obj.json_dumps().encode()
-                result = (
-                    JWS.sign(
-                        payload=jobj,
-                        key=self._key,
-                        alg=self._alg,
-                        nonce=nonce,
-                        url=url,
-                        kid=kid,
-                        )
-                    .json_dumps()
-                    .encode())
-                return result
-
         with LOG_JWS_POST().context():
             headers = kwargs.setdefault('headers', Headers())
             headers.setRawHeaders(b'content-type', [JOSE_CONTENT_TYPE])
             return (
                 DeferredContext(self._get_nonce(url))
-                .addCallback(cb_wrap_in_jws)
+                .addCallback(self._cb_wrap_in_jws, obj, url, kid)
                 .addCallback(
                     lambda data: self._send_request(
                         u'POST', url, data=data, **kwargs))

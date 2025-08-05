@@ -48,13 +48,12 @@ setup(
         'txsni',
         ],
     extras_require={
-        'libcloud': [
-            'apache-libcloud',
-        ],
         'dev': [
             'coverage',
             'diff-cover',
             'eliot-tree',
+            'build',
+            'pyOpenSSL',
             ],
         },
     )
