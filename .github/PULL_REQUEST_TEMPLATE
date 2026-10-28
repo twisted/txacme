@@ -7,3 +7,7 @@
 * [ ] Created a newsfragment in src/txacme/newsfragments/.
 * [ ] Updated the automated tests.
 * [ ] The changes pass minimal style checks.
+* [ ] I have not directly included the output of any generative AI system in this pull request, as per our [policy on generative AI](https://docs.twisted.org/en/latest/development/ai-policy.html).
+  Our bot will trigger the review process, by applying the pending review label
+  and requesting a review from the Twisted dev team.
+

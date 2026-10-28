@@ -3,7 +3,7 @@ Contributing to txacme
 
 We use `tox` to run the test in a controller environment.
 
-Each change should consider covering the followings:
+Each change should consider covering the following:
 
 * Create a release notes fragment. See section below.
 * Write automated tests to the point of having at least 100% code coverage.
@@ -67,3 +67,9 @@ a specific environment and execute the test with `trial`::
     $ . .tox/py38-twlatest/bin/activate
     $ pip install -e .
     $ trial txacme.test.test_service.AcmeIssuingServiceTests.test_timer_errors
+
+
+AI Policy
+---------
+
+txacme follows the `Twisted AI Policy <https://docs.twisted.org/en/latest/development/ai-policy.html>`_. This means this project does not allow the inclusion of the outputs of generative AI tools.
